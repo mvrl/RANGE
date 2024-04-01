@@ -309,6 +309,11 @@ class SatCLIP(nn.Module):
             self.visual.load_state_dict(weights.get_state_dict(progress=True), strict=False)
             self.visual.requires_grad_(False)
             self.visual.head.requires_grad_(True)
+        
+        elif vision_layers == 'scaleMAE':
+            print('Using Scale MAE')
+            #### need to add SatMAE
+
 
         else:
             print('using vision transformer')

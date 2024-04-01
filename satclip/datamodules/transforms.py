@@ -118,8 +118,7 @@ def get_sapclip_transform(resize_crop_size=256):
         # point = point.repeat(max_crops,1)
         # scale = torch.tensor([scale]*max_crops)
 ########################################### Comment for now ####################################
-        return dict(image=multi_images, point=point, scale=torch.tensor(scale))
-    
+        return dict(image=multi_images, point=point, scale=torch.tensor(scale))    
     return transform 
 
 

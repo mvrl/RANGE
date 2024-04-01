@@ -15,72 +15,14 @@ from tqdm import tqdm
 import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
-from transforms import get_pretrained_s2_train_transform, get_s2_train_transform, get_sapclip_transform
+from .transforms import get_sapclip_transform
 
 
 CHECK_MIN_FILESIZE = 10000 # 10kb
 
-class S2GeoDataModule(pl.LightningDataModule):
-    def __init__(
-        self,
-        data_dir: str = "/home/a.dhakal/active/project_crossviewmap/SatCLIP/some_data",
-        batch_size: int = 6,
-        num_workers: int = 6,
-        crop_size: int = 256,
-        val_random_split_fraction: float = 0.1,
-        transform: str = 'pretrained',
-        mode: str = "both",
-    ):
-        super().__init__()
-        self.data_dir = data_dir
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        if transform=='pretrained':
-            self.train_transform = get_pretrained_s2_train_transform(resize_crop_size=crop_size)
-        elif transform=='default':
-            self.train_transform = get_s2_train_transform()
-        elif transform=='sapclip':
-            self.train_transform = get_sapclip_transform()
-        else:
-            self.train_transform = transform
-            
-        self.val_random_split_fraction = val_random_split_fraction
-        self.mode = mode
-        self.save_hyperparameters()
 
-    def prepare_data(self) -> None:
-        if not os.path.exists(self.data_dir):
-            print("""
-            No dataset found. To download, please follow instructions on: https://github.com/microsoft/satclip
-            """)
 
-    def setup(self, stage="fit"):
-        dataset = S2Geo(root=self.data_dir, transform=self.train_transform, mode=self.mode)
-        N_val = int(len(dataset) * self.val_random_split_fraction)
-        N_train = len(dataset) - N_val
-        self.train_dataset, self.val_dataset = torch.utils.data.random_split(dataset, [N_train, N_val])
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            shuffle=True,
-        )
-
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            shuffle=False,
-            #persistent_workers=True if self.num_workers > 0 else False,
-        )
-
-    def test_dataloader(self):
-        raise NotImplementedError
-
-class S2Geo(NonGeoDataset):
+class SAPCLIP_Dataset(NonGeoDataset):
     """S2-100K dataset.
 
     This dataset contains 100,000 256x256 patches of 12 band Sentinel imagery sampled randomly
@@ -239,27 +181,6 @@ def collate_fn(batch):
         else:
             collate_batch[key] = torch.stack(collate_batch[key], dim=0)
 
-    # #stack and reshape the data
-    # for key in collate_batch.keys():
-    #         collate_batch[key] = torch.stack(collate_batch[key], dim=0)
-    #         collate_batch[key] = collate_batch[key].reshape(-1, *collate_batch[key].shape[2:])
-
-    # #grab the valid indices
-    # valid_indices = torch.nonzero(collate_batch['valid_mask'], as_tuple=True)[0]
-
-    # #filter with the valid indices 
-    # for key in collate_batch.keys():
-    #     collate_batch[key] = collate_batch[key][valid_indices]
-    
-    # #generate the ground_truth
-    # individual_scale = []
-    # i = 0
-    # batch_size = len(collate_batch['scale'])
-    # while i<batch_size:
-    #     curr_scale = collate_batch['scale'][i]
-    #     individual_scale.append(curr_scale)
-    #     i = i+curr_scale
-
     #define a zero matrix for label of the size (batch_size, total_number_of_images)
     loc_size = len(collate_batch['scale'])
     im_size = len(collate_batch['image'])
@@ -290,7 +211,7 @@ def get_split_dataset(dataset,
 
 if __name__ == '__main__':
     root = '/home/a.dhakal/active/project_crossviewmap/SatCLIP/sat_images_17'
-    dataset = S2Geo(root=root, prototype=True)
+    dataset = SAPCLIP_Dataset(root=root, prototype=True)
     train_loader, val_loader = get_split_dataset(dataset, 0.1, 4, 0)
     sample = next(iter(val_loader))
     import code; code.interact(local=dict(globals(),**locals()))    

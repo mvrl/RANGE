@@ -202,3 +202,6 @@ class S2Geo(NonGeoDataset):
             plt.suptitle(suptitle)
 
         return fig
+
+if __name__ == '__main__':
+    print('Main')
