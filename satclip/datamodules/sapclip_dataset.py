@@ -100,6 +100,7 @@ class S2Geo(NonGeoDataset):
         transform_type: str = 'sapclip',
         crop_size: int = 256, 
         mode: Optional[str] = "both",
+        prototype: bool=False
     ) -> None:
         """Initialize a new S2-100K dataset instance.
         Args:
@@ -116,6 +117,10 @@ class S2Geo(NonGeoDataset):
         index_fn = "index_bing_full.csv"
 
         df = pd.read_csv(os.path.join(self.root, index_fn))
+        ### for prototyping
+        if prototype:
+            print('Using Dummy Prototype Data')
+            df = df.iloc[0:100]
         self.filenames = []
         self.points = []
 
@@ -220,7 +225,6 @@ class S2Geo(NonGeoDataset):
 
 #manage the shape of the batch
 def collate_fn(batch):
-    import code; code.interact(local=dict(globals(),**locals()))    
     collate_batch = {}
     collate_batch = collections.defaultdict(list)
     # collect all the dictionary into a single dictionary
@@ -228,45 +232,48 @@ def collate_fn(batch):
         for k,v in d.items():
             collate_batch[k].append(v)
 
-    #stack and reshape the data
+    #stack and concat to get the desired shape
     for key in collate_batch.keys():
+        if key=='image':
+            collate_batch[key] = torch.cat(collate_batch[key], dim=0)
+        else:
             collate_batch[key] = torch.stack(collate_batch[key], dim=0)
-            collate_batch[key] = collate_batch[key].reshape(-1, *collate_batch[key].shape[2:])
 
-    #grab the valid indices
-    valid_indices = torch.nonzero(collate_batch['valid_mask'], as_tuple=True)[0]
+    # #stack and reshape the data
+    # for key in collate_batch.keys():
+    #         collate_batch[key] = torch.stack(collate_batch[key], dim=0)
+    #         collate_batch[key] = collate_batch[key].reshape(-1, *collate_batch[key].shape[2:])
 
-    #filter with the valid indices 
-    for key in collate_batch.keys():
-        collate_batch[key] = collate_batch[key][valid_indices]
+    # #grab the valid indices
+    # valid_indices = torch.nonzero(collate_batch['valid_mask'], as_tuple=True)[0]
+
+    # #filter with the valid indices 
+    # for key in collate_batch.keys():
+    #     collate_batch[key] = collate_batch[key][valid_indices]
     
-    #generate the ground_truth
-    individual_scale = []
-    i = 0
-    batch_size = len(collate_batch['scale'])
-    while i<batch_size:
-        curr_scale = collate_batch['scale'][i]
-        individual_scale.append(curr_scale)
-        i = i+curr_scale
+    # #generate the ground_truth
+    # individual_scale = []
+    # i = 0
+    # batch_size = len(collate_batch['scale'])
+    # while i<batch_size:
+    #     curr_scale = collate_batch['scale'][i]
+    #     individual_scale.append(curr_scale)
+    #     i = i+curr_scale
 
-    #define a zero matrix for label
-    label = torch.zeros((batch_size,batch_size))
+    #define a zero matrix for label of the size (batch_size, total_number_of_images)
+    loc_size = len(collate_batch['scale'])
+    im_size = len(collate_batch['image'])
+    loc_to_img_label = torch.zeros((loc_size,im_size))
     curr_idx=0
-    for scale in individual_scale:
+    #fill all the positive images for a given loc-scale pair with ones
+    for i, scale in enumerate(collate_batch['scale']):
         shift = curr_idx+scale
-        label[curr_idx:shift,curr_idx:shift] = 1
+        loc_to_img_label[i,curr_idx:shift] = 1
         curr_idx=shift
 
-    collate_batch['label'] = label
-
+    #assign the label matrix to the collate_batch dictionary
+    collate_batch['label'] = loc_to_img_label
     return collate_batch
-    # import code; code.interact(local=dict(globals(),**locals()))    
-    
-    # images = batch['images']
-    # points = batch['point']
-    # scale = batch['scale']
-    # for image in images:
-        
 
 
 def get_split_dataset(dataset, 
@@ -283,7 +290,7 @@ def get_split_dataset(dataset,
 
 if __name__ == '__main__':
     root = '/home/a.dhakal/active/project_crossviewmap/SatCLIP/sat_images_17'
-    dataset = S2Geo(root=root)
+    dataset = S2Geo(root=root, prototype=True)
     train_loader, val_loader = get_split_dataset(dataset, 0.1, 4, 0)
     sample = next(iter(val_loader))
     import code; code.interact(local=dict(globals(),**locals()))    
