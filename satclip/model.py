@@ -12,6 +12,7 @@ import torchgeo.models
 from torchgeo.models import ResNet18_Weights, ResNet50_Weights, ViTSmall16_Weights
 from location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
 from datamodules.s2geo_dataset import S2Geo
+from .satmae import SatMAE
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -310,10 +311,13 @@ class SatCLIP(nn.Module):
             self.visual.requires_grad_(False)
             self.visual.head.requires_grad_(True)
         
-        elif vision_layers == 'scaleMAE':
+        elif vision_layers == 'SATMAE':
             print('Using Scale MAE')
+            pretrained_satmae_path = '/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/satmae_models/pretrain-vit-base-e199.pth'
+            self.visual = SatMAE(pretrained_models_path=pretrained_path, device=device, fc_dim=embed_dim)
+            self.visual.required_grad_(False)
+            self.visual.fc.required_grad_(True)
             #### need to add SatMAE
-
 
         else:
             print('using vision transformer')
