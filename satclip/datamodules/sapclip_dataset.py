@@ -15,12 +15,24 @@ from tqdm import tqdm
 import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
+#relative imports 
 from .transforms import get_sapclip_transform
 
 
 CHECK_MIN_FILESIZE = 10000 # 10kb
 
 
+def get_split_dataset(dataset, 
+    val_split: float=0.1,
+    batch_size: int=8,
+     num_workers: int=4):
+    train_split = 1-val_split
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_split, val_split])
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers,
+     shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=False,
+    collate_fn=collate_fn)    
+    return train_loader, val_loader
 
 class SAPCLIP_Dataset(NonGeoDataset):
     """S2-100K dataset.
@@ -53,10 +65,10 @@ class SAPCLIP_Dataset(NonGeoDataset):
         assert mode in ["both", "points"]
         self.root = root
         self.mode = mode
-        if not self._check_integrity():
-            raise RuntimeError("Dataset not found or corrupted.")
+        # if not self._check_integrity():
+        #     raise RuntimeError("Dataset not found or corrupted.")
 
-        index_fn = "index_bing_full.csv"
+        index_fn = "index_sentinel_full.csv"
 
         df = pd.read_csv(os.path.join(self.root, index_fn))
         ### for prototyping
@@ -68,7 +80,7 @@ class SAPCLIP_Dataset(NonGeoDataset):
 
         n_skipped_files = 0
         for i in range(df.shape[0]):
-            filename = os.path.join(self.root, df.iloc[i]["fn"])
+            filename = os.path.join(self.root, 'sentinel', df.iloc[i]["fn"])
 
             # if os.path.getsize(filename) < CHECK_MIN_FILESIZE:
             #     n_skipped_files += 1
@@ -197,24 +209,14 @@ def collate_fn(batch):
     return collate_batch
 
 
-def get_split_dataset(dataset, 
-    val_split: float=0.1,
-    batch_size: int=8,
-     num_workers: int=4):
-    train_split = 1-val_split
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_split, val_split])
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers,
-     shuffle=True, collate_fn=collate_fn)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=False,
-    collate_fn=collate_fn)    
-    return train_loader, val_loader
 
 if __name__ == '__main__':
-    root = '/home/a.dhakal/active/project_crossviewmap/SatCLIP/sat_images_17'
+    root = '/home/a.dhakal/active/proj_smart/satclip_sentinel/images'
     dataset = SAPCLIP_Dataset(root=root, prototype=True)
     train_loader, val_loader = get_split_dataset(dataset, 0.1, 4, 0)
+    import code; code.interact(local=dict(globals(),**locals())) 
     sample = next(iter(val_loader))
-    import code; code.interact(local=dict(globals(),**locals()))    
-
+       
+  
     
     

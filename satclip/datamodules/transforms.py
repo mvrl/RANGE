@@ -85,18 +85,21 @@ def get_sapclip_transform(resize_crop_size=256):
         T.ToTensor()
     ])
 
+    map_scale = {1:torch.tensor([1,0,0]), 3:torch.tensor([0,1,0]), 5:torch.tensor([0,0,1])}
+
     def transform(sample):
         image = sample['image']
         point = sample['point']
         
-        #define the maximum number of crops possible at the largest scale
-        max_crops = 5
+        # #define the maximum number of crops possible at the largest scale
+        # max_crops = 5
+
         #randomly select the scale
         scale = np.random.choice([1, 3, 5])
+
         #create the bounding box for the scale
         crop_size = 256*scale
-        #create a mask of ones 
-        mask = torch.zeros((3,256,256))
+
         #center crop image for the given scale
         image = T.CenterCrop(size=crop_size)(image)
 
@@ -106,6 +109,8 @@ def get_sapclip_transform(resize_crop_size=256):
         multi_images = torch.stack([augmentation(img) for img in multi_images], dim=0)
         #jitter the point
         point = coordinate_jitter(point)
+        #one hot encode the scale
+        one_hot_scale = map_scale[scale]
 ########################################### Comment for now ####################################
         # #compute the number of masks to add ##### hardcoded need to make dynamic
         # num_masks_to_add = max_crops-num_crops ##currently takes scale as the number of crops
@@ -118,7 +123,7 @@ def get_sapclip_transform(resize_crop_size=256):
         # point = point.repeat(max_crops,1)
         # scale = torch.tensor([scale]*max_crops)
 ########################################### Comment for now ####################################
-        return dict(image=multi_images, point=point, scale=torch.tensor(scale))    
+        return dict(image=multi_images, point=point, scale=torch.tensor(scale), hot_scale=one_hot_scale)    
     return transform 
 
 
