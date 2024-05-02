@@ -10,8 +10,10 @@ import math
 import timm
 import torchgeo.models
 from torchgeo.models import ResNet18_Weights, ResNet50_Weights, ViTSmall16_Weights
-from location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
-from datamodules.s2geo_dataset import S2Geo
+from .location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
+from .datamodules.s2geo_dataset import S2Geo
+
+#local imports
 from .satmae import SatMAE
 
 class Bottleneck(nn.Module):
@@ -407,10 +409,13 @@ class SatCLIP_2(nn.Module):
                  ffn: bool=True,
                  num_hidden_layers: int=2,
                  capacity: int=256,
+                 device: str='cuda',
                  *args,
                  **kwargs
                  ):
         super().__init__()
+
+        self.vision_layers = vision_layers
             
         #define the vision encoder
         if isinstance(vision_layers, (tuple, list)):
@@ -452,12 +457,12 @@ class SatCLIP_2(nn.Module):
             self.visual.requires_grad_(False)
             self.visual.head.requires_grad_(True)
         
-        elif vision_layers == 'SATMAE':
+        elif vision_layers == 'SatMAE':
             print('Using Scale MAE')
             pretrained_satmae_path = '/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/satmae_models/pretrain-vit-base-e199.pth'
-            self.visual = SatMAE(pretrained_models_path=pretrained_path, device=device, fc_dim=embed_dim)
-            self.visual.required_grad_(False)
-            self.visual.fc.required_grad_(True)
+            self.visual = SatMAE(pretrained_models_path=pretrained_satmae_path, device=device, fc_dim=embed_dim)
+            self.visual.requires_grad_(False)
+            self.visual.fc.requires_grad_(True)
             #### need to add SatMAE
 
         else:
@@ -483,8 +488,8 @@ class SatCLIP_2(nn.Module):
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
         #define the scale encoder
-        self.scale_encoder = nn.Linear(3, 256)
-        self.fc_combine = nn.Linear(512, 256)
+        self.scale_encoder = nn.Linear(3, 256).double()
+        self.fc_combine = nn.Linear(768, 256).double()
 
         self.initialize_parameters()
 
@@ -502,24 +507,26 @@ class SatCLIP_2(nn.Module):
                     if name.endswith("bn3.weight"):
                         nn.init.zeros_(param)
 
-    @property
     def dtype(self):
         if isinstance(self.visual, timm.models.vision_transformer.VisionTransformer):
             return self.visual.patch_embed.proj.weight.dtype
+        elif self.vision_layers=='SatMAE':
+            return self.visual.fc.weight.dtype
         else:
             return self.visual.conv1.weight.dtype
 
     def encode_image(self, image):
-        return self.visual(image.type(self.dtype))
+        
+        return self.visual(image.type(self.dtype()))
 
     def encode_location(self, coords, scale):
         location_features = nn.functional.leaky_relu(self.location(coords.double()))
-        scale_features = nn.functional.leaky_relu(self.scale_encoder(scale))
+        scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
         scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
         scaled_loc_features = self.fc_combine(scaled_loc_features)
         return scaled_loc_features
 
-    def forward(self, image, coords):
+    def forward(self, image, coords, scale):
 
         image_features = self.encode_image(image)     
         location_features = self.encode_location(coords, scale).float()
@@ -537,6 +544,8 @@ class SatCLIP_2(nn.Module):
         return logits_per_image, logits_per_location
 
 def convert_weights(model: nn.Module):
+
+
     """Convert applicable model parameters to fp16"""
 
     def _convert_weights_to_fp16(l):
@@ -558,3 +567,43 @@ def convert_weights(model: nn.Module):
                     attr.data = attr.data.half()
 
     model.apply(_convert_weights_to_fp16)
+
+if __name__ == '__main__':
+    embed_dim=512
+    image_resolution=256
+    vision_layers='SatMAE'
+    vision_width=768
+    vision_patch_size=32
+    in_channels=4
+    le_type="grid"
+    pe_type="siren"
+    frequency_num=16
+    max_radius=260
+    min_radius=1
+    legendre_polys=16
+    harmonics_calculation="analytic"
+    sh_embedding_dims=32
+    learning_rate=1e-4
+    weight_decay=0.01
+    num_hidden_layers=2
+    capacity=256
+    model = SatCLIP_2(
+            embed_dim=embed_dim,
+            image_resolution=image_resolution,
+            vision_layers=vision_layers,
+            vision_width=vision_width,
+            vision_patch_size=vision_patch_size,
+            in_channels=in_channels,
+            le_type=le_type,
+            pe_type=pe_type,
+            frequency_num=frequency_num,
+            max_radius=max_radius,
+            min_radius=min_radius,
+            legendre_polys=legendre_polys,
+            harmonics_calculation=harmonics_calculation,
+            sh_embedding_dims=sh_embedding_dims,
+            num_hidden_layers=num_hidden_layers,
+            capacity=capacity,
+            device='cuda'
+        )
+    import code; code.interact(local=dict(globals(), **locals()))

@@ -3,13 +3,14 @@ import sys
 # sys.path.append('./satclip')
 import torch
 
-#local imports
-from loss import SatCLIPLoss
-from model import SatCLIP
-from main import SatCLIPLightningModule
+
+from .main_old import SatCLIPLightningModule
 import torch.nn as nn
 import lightning as L
 import numpy as np
+#local imports
+from .loss import SatCLIPLoss
+from .model import SatCLIP
 
 def get_satclip(ckpt_path, device='cuda', return_all=False):
     ckpt = torch.load(ckpt_path, map_location=device)
