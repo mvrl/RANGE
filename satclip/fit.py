@@ -4,13 +4,19 @@ from datetime import datetime
 
 import lightning.pytorch
 import torch
-from datamodules.s2geo_dataset import S2GeoDataModule
+# from datamodules.s2geo_dataset import S2GeoDataModule
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.cli import LightningCLI
-from loss import SatCLIPLoss
-from model import SatCLIP, SatCLIP_2
+
+
+#local imports 
+from .loss import SAPCLIPLoss
+from .model import SatCLIP_2
+from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset
 
 torch.set_float32_matmul_precision('high')
+
+
 
 class SAPCLIP(lightning.pytorch.LightningModule):
     def __init__(
@@ -53,6 +59,7 @@ class SAPCLIP(lightning.pytorch.LightningModule):
             sh_embedding_dims=sh_embedding_dims,
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
+            device=self.device
         )
         
         self.loss_fun = SAPCLIPLoss()
@@ -93,11 +100,11 @@ class SAPCLIP(lightning.pytorch.LightningModule):
     
     #define the forward pass
     def forward(self, batch, batch_idx):
-        images = batch['image']
-        points = batch['point']
-        scale = batch['scale']
+        # images = batch['image']
+        # points = batch['point']
+        # scale = batch['scale']
         
-        logits_per_image, logits_per_coord = self.model(images, points, scale)
+        logits_per_image, logits_per_coord = self.model(batch['image'], batch['point'], batch['hot_scale'])
         return self.loss_fun(logits_per_image, logits_per_coord)
 
     def training_step(self, batch, batch_idx):
@@ -109,6 +116,25 @@ class SAPCLIP(lightning.pytorch.LightningModule):
         loss = self(batch, batch_idx)
         self.log("val_loss", loss)
         return loss    
+    
+if __name__ == '__main__':
+    root = '/home/a.dhakal/active/proj_smart/satclip_sentinel/images'
+
+    #get dataloaders
+    dataset = SAPCLIP_Dataset(root=root,transform_type='sapclip', crop_size=224, prototype=True)
+    train_loader, val_loader = get_split_dataset(dataset, val_split=0.1, batch_size=4, num_workers=0)
+    
+    sample = next(iter(val_loader))
+
+    #initialize model
+    sapclip_model = SAPCLIP()
+
+    #forward pass
+    output = sapclip_model(sample, 0)
+    
+
+
+
 
 
 

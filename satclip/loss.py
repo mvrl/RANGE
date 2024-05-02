@@ -45,3 +45,11 @@ class SatCLIPLoss(nn.Module):
         ) / 2
 
         return {"contrastive_loss": total_loss} if output_dict else total_loss
+
+class SAPCLIPLoss(nn.Module):
+    def __init__(self):
+        pass
+
+    def forward(self):
+        pass
+
