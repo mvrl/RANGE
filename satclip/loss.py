@@ -46,10 +46,15 @@ class SatCLIPLoss(nn.Module):
 
         return {"contrastive_loss": total_loss} if output_dict else total_loss
 
-class SAPCLIPLoss(nn.Module):
-    def __init__(self):
-        pass
+# class SAPCLIPLoss(nn.Module):
+#     def __init__(self, 
+#         probablistic:bool=False):
+#         if probablistic:
+#             self.loss_type='probablistic'
+#         else:
+#             self.loss_type='deterministic'
 
-    def forward(self):
-        pass
+#     def forward(self, image_features, location_features):
+        
+        
 

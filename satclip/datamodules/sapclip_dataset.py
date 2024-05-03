@@ -34,6 +34,38 @@ def get_split_dataset(dataset,
     collate_fn=collate_fn)    
     return train_loader, val_loader
 
+#manage the shape of the batch
+def collate_fn(batch):
+    collate_batch = {}
+    collate_batch = collections.defaultdict(list)
+    # collect all the dictionary into a single dictionary
+    for d in batch:
+        for k,v in d.items():
+            collate_batch[k].append(v)
+
+    #stack and concat to get the desired shape
+    for key in collate_batch.keys():
+        if key=='image':
+            collate_batch[key] = torch.cat(collate_batch[key], dim=0)
+        else:
+            collate_batch[key] = torch.stack(collate_batch[key], dim=0)
+
+    #define a zero matrix for label of the size (batch_size, total_number_of_images)
+    loc_size = len(collate_batch['scale'])
+    im_size = len(collate_batch['image'])
+    loc_to_img_label = torch.zeros((loc_size,im_size))
+    curr_idx=0
+    #fill all the positive images for a given loc-scale pair with ones
+    for i, scale in enumerate(collate_batch['scale']):
+        shift = curr_idx+scale
+        loc_to_img_label[i,curr_idx:shift] = 1
+        curr_idx=shift
+
+    #assign the label matrix to the collate_batch dictionary
+    collate_batch['label'] = loc_to_img_label
+    return collate_batch
+
+    
 class SAPCLIP_Dataset(NonGeoDataset):
     """S2-100K dataset.
 
@@ -177,36 +209,6 @@ class SAPCLIP_Dataset(NonGeoDataset):
 
         return fig
 
-#manage the shape of the batch
-def collate_fn(batch):
-    collate_batch = {}
-    collate_batch = collections.defaultdict(list)
-    # collect all the dictionary into a single dictionary
-    for d in batch:
-        for k,v in d.items():
-            collate_batch[k].append(v)
-
-    #stack and concat to get the desired shape
-    for key in collate_batch.keys():
-        if key=='image':
-            collate_batch[key] = torch.cat(collate_batch[key], dim=0)
-        else:
-            collate_batch[key] = torch.stack(collate_batch[key], dim=0)
-
-    #define a zero matrix for label of the size (batch_size, total_number_of_images)
-    loc_size = len(collate_batch['scale'])
-    im_size = len(collate_batch['image'])
-    loc_to_img_label = torch.zeros((loc_size,im_size))
-    curr_idx=0
-    #fill all the positive images for a given loc-scale pair with ones
-    for i, scale in enumerate(collate_batch['scale']):
-        shift = curr_idx+scale
-        loc_to_img_label[i,curr_idx:shift] = 1
-        curr_idx=shift
-
-    #assign the label matrix to the collate_batch dictionary
-    collate_batch['label'] = loc_to_img_label
-    return collate_batch
 
 
 
