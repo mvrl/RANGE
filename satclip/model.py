@@ -387,6 +387,7 @@ class SatCLIP(nn.Module):
         # shape = [global_batch_size, global_batch_size]
         return logits_per_image, logits_per_location
 
+
 #my satclip class
 class SatCLIP_2(nn.Module):
     def __init__(self,
@@ -410,6 +411,7 @@ class SatCLIP_2(nn.Module):
                  num_hidden_layers: int=2,
                  capacity: int=256,
                  device: str='cuda',
+                 loss_type: str='deterministic',
                  *args,
                  **kwargs
                  ):
@@ -485,11 +487,24 @@ class SatCLIP_2(nn.Module):
                                         self.nnet
         ).double()
         
-        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.logit_scale_l2i = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.logit_scale_i2l = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
         #define the scale encoder
-        self.scale_encoder = nn.Linear(3, 256).double()
-        self.fc_combine = nn.Linear(768, 256).double()
+        self.scale_encoder = nn.Linear(3, embed_dim).double()
+        self.fc_combine = nn.Linear(2*embed_dim, embed_dim).double()
+
+        #select the appropriate function deterministic vs probablistic that prepares
+        #the embeddings for the appropriate loss
+        if loss_type=='probablistic':
+            self.loss_prep=probablistic_sapclip
+
+        elif loss_type=='deterministic':
+            self.loss_prep=deterministic_sapclip
+        
+        else:
+            raise ValueError('Invalid Value for loss type')
+        
 
         self.initialize_parameters()
 
@@ -515,8 +530,7 @@ class SatCLIP_2(nn.Module):
         else:
             return self.visual.conv1.weight.dtype
 
-    def encode_image(self, image):
-        
+    def encode_image(self, image): 
         return self.visual(image.type(self.dtype()))
 
     def encode_location(self, coords, scale):
@@ -526,22 +540,50 @@ class SatCLIP_2(nn.Module):
         scaled_loc_features = self.fc_combine(scaled_loc_features)
         return scaled_loc_features
 
-    def forward(self, image, coords, scale):
+    def forward(self, batch):
+        image = batch['image']
+        coords = batch['point']
+        hot_scale = batch['hot_scale']
+        scale = batch['scale']
+        label = batch['label']
 
         image_features = self.encode_image(image)     
-        location_features = self.encode_location(coords, scale).float()
+        location_features = self.encode_location(coords, hot_scale).float()
         
-        # normalized features
-        image_features = image_features / image_features.norm(dim=1, keepdim=True)
-        location_features = location_features / location_features.norm(dim=1, keepdim=True)
+        # get the similarity matrix and the corresponding labels    
+        location_to_image_similarity, location_to_image_label,image_to_location_similarity, image_to_location_label = self.loss_prep(image_features, location_features, label)
+        
 
-        # cosine similarity as logits
-        logit_scale = self.logit_scale.exp()
-        logits_per_image = logit_scale * image_features @ location_features.t()
-        logits_per_location = logits_per_image.t()
+        # get rid of log in the logit scale
+        logit_scale_l2i = self.logit_scale_l2i.exp()
+        logit_scale_i2l = self.logit_scale_i2l.exp()
 
-        # shape = [global_batch_size, global_batch_size]
-        return logits_per_image, logits_per_location
+        #scale the similarity with the logit scale
+        location_to_image_similarity = logit_scale_l2i * location_to_image_similarity
+        image_to_location_similarity = logit_scale_i2l * image_to_location_similarity
+
+        self.log('Location to Image Temperature', 1/(logit_scale_l2i.data))
+        self.log('Image to Location Temperature', 1/(logit_scale_i2l.data))
+
+        return location_to_image_similarity,location_to_image_label, image_to_location_similarity, image_to_location_label
+
+def deterministic_sapclip(image_features, location_features, label):
+    # normalized features
+    image_features = image_features / image_features.norm(dim=1, keepdim=True)
+    location_features = location_features / location_features.norm(dim=1, keepdim=True)
+    # this will be of shape [B,B'], where B' > B
+    location_to_image_similarity = location_features@image_features.t()
+    image_to_location_similarity = location_to_image_similarity.t() # [B',B]
+
+    #normalize the label to distribute the probablity between the positive images
+    location_to_image_label = label/torch.sum(label, dim=1, keepdim=True)
+    image_to_location_label = label.t() 
+    return location_to_image_similarity, location_to_image_label, image_to_location_similarity, image_to_location_label  # label shape [B,B']
+
+def probablistic_sapclip(image_features, location_features, label):
+    pass
+
+
 
 def convert_weights(model: nn.Module):
 
@@ -606,4 +648,4 @@ if __name__ == '__main__':
             capacity=capacity,
             device='cuda'
         )
-    import code; code.interact(local=dict(globals(), **locals()))
+
