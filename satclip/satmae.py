@@ -195,7 +195,7 @@ def vit_huge_patch14(**kwargs):
 
 def get_SatMAE_model(pretrained_models_path,device):
 
-    checkpoint = torch.load(pretrained_models_path)
+    checkpoint = torch.load(pretrained_models_path, map_location=torch.device(device))
     model = vit_base_patch16()
     state_dict = model.state_dict()
     checkpoint_model = checkpoint['model']
@@ -214,7 +214,6 @@ def get_SatMAE_model(pretrained_models_path,device):
     trunc_normal_(model.head.weight, std=2e-5)
     model.to(device)
     model_without_ddp = model
-    # print(model_without_ddp)
     return model
 
 
@@ -222,6 +221,7 @@ class SatMAE(pl.LightningModule):
     def __init__(self, pretrained_models_path,device,fc_dim = 512, metadata_type='none'): #fc_dim = 512 for AudioCLAP and 1024 for AudioCLIP):
         super().__init__()
         self.metadata_type = metadata_type
+        print(f'Device is {device}')
         self.model = get_SatMAE_model(pretrained_models_path,device)
         self.fc = nn.Linear(1000, fc_dim)
 

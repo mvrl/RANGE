@@ -497,9 +497,11 @@ class SatCLIP_2(nn.Module):
         #select the appropriate function deterministic vs probablistic that prepares
         #the embeddings for the appropriate loss
         if loss_type=='probablistic':
+            print('Using probablistic loss')
             self.loss_prep=probablistic_sapclip
 
         elif loss_type=='deterministic':
+            print('Using deterministic loss')
             self.loss_prep=deterministic_sapclip
         
         else:
@@ -562,8 +564,8 @@ class SatCLIP_2(nn.Module):
         location_to_image_similarity = logit_scale_l2i * location_to_image_similarity
         image_to_location_similarity = logit_scale_i2l * image_to_location_similarity
 
-        self.log('Location to Image Temperature', 1/(logit_scale_l2i.data))
-        self.log('Image to Location Temperature', 1/(logit_scale_i2l.data))
+        # self.log('Location to Image Temperature', 1/(logit_scale_l2i.data))
+        # self.log('Image to Location Temperature', 1/(logit_scale_i2l.data))
 
         return location_to_image_similarity,location_to_image_label, image_to_location_similarity, image_to_location_label
 
