@@ -63,7 +63,7 @@ def collate_fn(batch):
 
     #assign the label matrix to the collate_batch dictionary
     collate_batch['label'] = loc_to_img_label
-    return collate_batch
+    return dict(collate_batch)
 
     
 class SAPCLIP_Dataset(NonGeoDataset):
@@ -95,12 +95,16 @@ class SAPCLIP_Dataset(NonGeoDataset):
             mode: which data to return (options are "both" or "points"), useful for embedding locations without loading images 
         """
         assert mode in ["both", "points"]
+        corrupt_files = ['patch_45116.tif.jpeg', 'patch_76967.tif.jpeg', 'patch_27934.tif.jpeg', 'patch_45120.tif.jpeg', 'patch_85627.tif.jpeg', 'patch_561.tif.jpeg', 'patch_381.tif.jpeg', 'patch_27139.tif.jpeg', 'patch_91793.tif.jpeg']
+        
         self.root = root
         self.mode = mode
         # if not self._check_integrity():
         #     raise RuntimeError("Dataset not found or corrupted.")
 
         index_fn = "index_sentinel_full.csv"
+        #add full path of corrupt files
+        corrupt_files = [os.path.join(self.root, 'sentinel', file) for file in corrupt_files]
 
         df = pd.read_csv(os.path.join(self.root, index_fn))
         ### for prototyping
@@ -113,11 +117,13 @@ class SAPCLIP_Dataset(NonGeoDataset):
         n_skipped_files = 0
         for i in range(df.shape[0]):
             filename = os.path.join(self.root, 'sentinel', df.iloc[i]["fn"])
+            if filename in corrupt_files:
+                n_skipped_files+=1
+                continue        
 
             # if os.path.getsize(filename) < CHECK_MIN_FILESIZE:
             #     n_skipped_files += 1
             #     continue
-
             self.filenames.append(filename)
             self.points.append(
                 (df.iloc[i]["lon"], df.iloc[i]["lat"])
@@ -214,11 +220,12 @@ class SAPCLIP_Dataset(NonGeoDataset):
 
 if __name__ == '__main__':
     root = '/home/a.dhakal/active/proj_smart/satclip_sentinel/images'
-    dataset = SAPCLIP_Dataset(root=root, prototype=True)
+    
+
+    dataset = SAPCLIP_Dataset(root=root, prototype=False)
     train_loader, val_loader = get_split_dataset(dataset, 0.1, 4, 0)
-    import code; code.interact(local=dict(globals(),**locals())) 
     sample = next(iter(val_loader))
-       
+    import code; code.interact(local=dict(globals(),**locals())) 
   
     
     

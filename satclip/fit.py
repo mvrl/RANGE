@@ -1,24 +1,30 @@
 import argparse
 import os
 from datetime import datetime
+from argparse import ArgumentParser
 
-import lightning.pytorch
+import lightning.pytorch as L
 import torch
+import torch.nn.functional as F
 # from datamodules.s2geo_dataset import S2GeoDataModule
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
+from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.cli import LightningCLI
 
 
+
+
 #local imports 
-from .loss import SAPCLIPLoss
 from .model import SatCLIP_2
 from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset
 
 torch.set_float32_matmul_precision('high')
 
+def contrastive_loss(similarity, labels):
+    #labels is class probablities of shape [N,C], where C is the number of classes 
+    return F.cross_entropy(similarity, labels)
 
-
-class SAPCLIP(lightning.pytorch.LightningModule):
+class SAPCLIP(L.LightningModule):
     def __init__(
         self,
         embed_dim=512,
@@ -39,6 +45,7 @@ class SAPCLIP(lightning.pytorch.LightningModule):
         weight_decay=0.01,
         num_hidden_layers=2,
         capacity=256,        
+        loss_type='deterministic'
     ) -> None:
         super().__init__()
 
@@ -59,10 +66,10 @@ class SAPCLIP(lightning.pytorch.LightningModule):
             sh_embedding_dims=sh_embedding_dims,
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
-            device=self.device
+            device=self.device,
+            loss_type=loss_type
         )
         
-        self.loss_fun = SAPCLIPLoss()
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.save_hyperparameters()
@@ -102,36 +109,95 @@ class SAPCLIP(lightning.pytorch.LightningModule):
     def forward(self, batch, batch_idx):
         # images = batch['image']
         # points = batch['point']
-        # scale = batch['scale']
-        
-        logits_per_image, logits_per_coord = self.model(batch['image'], batch['point'], batch['hot_scale'])
-        return self.loss_fun(logits_per_image, logits_per_coord)
+        # scale = batch['scale']        
+        location_to_image_similarity,location_to_image_label, image_to_location_similarity, image_to_location_label = self.model(batch)
+        loss = (
+            F.cross_entropy(location_to_image_similarity,location_to_image_label) +
+                    F.cross_entropy(image_to_location_similarity, image_to_location_label)
+                    )/2
+        return loss
 
     def training_step(self, batch, batch_idx):
         loss = self(batch, batch_idx)
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, batch_size=len(batch), prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss = self(batch, batch_idx)
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, batch_size=len(batch), prog_bar=True)
         return loss    
+
+def get_args():
+    parser = ArgumentParser()
+    #dataloader arguments
+    parser.add_argument('--num_workers', type=int, default=8)
+    parser.add_argument('--batch_size',type=int, default=512)
+    parser.add_argument('--data_root', type=str, default='/home/a.dhakal/active/proj_smart/satclip_sentinel/images')
+
+    #trainer arguments
+    parser.add_argument('--max_epochs', type=int, default=10)
+    parser.add_argument('--strategy', type=str, default='ddp_find_unused_parameters_false')
+    parser.add_argument('--accelerator', type=str, default='gpu')
+    parser.add_argument('--devices', type=int, default=1)
+    parser.add_argument('--mode', type=str, default='dev')
+    parser.add_argument('--accumulate_grad', type=int, default=16)
+
+    #logger arguments
+    parser.add_argument('--log_dir', type=str, default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/logs')
+    parser.add_argument('--ckpt_path', type=str, default='')
+    parser.add_argument('--ckpt_mode', type=str, default='hard')
+    parser.add_argument('--project_name', type=str, default='SAPCLIP')
+    parser.add_argument('--run_name', type=str, default='dev')
+    parser.add_argument('--wandb_mode', type=str, default='disabled')
+    parser.add_argument('--wandb_resume', type=str, default='')
+
+    #model arguments
+    parser.add_argument('--loss_type', type=str, default='deterministic')
+    parser.add_argument('--embed_dim', type=int, default=256)
+    parser.add_argument('--crop_size', type=int, default=224)
+
+    args = parser.parse_args()
+    return args
+
     
 if __name__ == '__main__':
-    root = '/home/a.dhakal/active/proj_smart/satclip_sentinel/images'
+    args = get_args()
 
-    #get dataloaders
-    dataset = SAPCLIP_Dataset(root=root,transform_type='sapclip', crop_size=224, prototype=True)
-    train_loader, val_loader = get_split_dataset(dataset, val_split=0.1, batch_size=4, num_workers=0)
+    #initialize checkpoints and loggers
+    lr_logger = LearningRateMonitor(logging_interval='epoch')
+
+    #initiallize the wandb logger
+    wb_logger = WandbLogger(save_dir=args.log_dir,project=args.project_name, name=args.run_name,
+     mode=args.wandb_mode)
+
+    #initialize checkpoint monitor
+    ckpt_monitors = ModelCheckpoint(monitor='val_loss', filename='{epoch}-{val_loss:.3f}',
+             mode='min', save_top_k=10, save_last=True)
     
-    sample = next(iter(val_loader))
+    #initialize trainer
+    if args.mode == 'dev': 
+        print('Development Test Run')
+        trainer = L.Trainer(fast_dev_run=15, max_epochs=4, logger=wb_logger, strategy=args.strategy,
+         num_sanity_val_steps=0, accelerator=args.accelerator, devices=args.devices, 
+        callbacks=[ckpt_monitors, lr_logger])
+    elif args.mode == 'train':
+        print('Training Run')
+        trainer = L.Trainer(precision='32', logger=wb_logger, strategy=args.strategy, 
+        num_sanity_val_steps=1, accelerator=args.accelerator, devices=args.devices, 
+        callbacks=[ckpt_monitors, lr_logger], check_val_every_n_epoch=1, 
+        log_every_n_steps=15, accumulate_grad_batches=args.accumulate_grad)
+    else:
+        raise ValueError('Invalid value for mode')
+    
+    #get dataloaders
+    dataset = SAPCLIP_Dataset(root=args.data_root, transform_type='sapclip', crop_size=args.crop_size, prototype=False)
+    train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=args.batch_size,
+     num_workers=args.num_workers)
 
     #initialize model
-    sapclip_model = SAPCLIP()
-
-    #forward pass
-    output = sapclip_model(sample, 0)
-    
+    sapclip_model = SAPCLIP(embed_dim=256, loss_type=args.loss_type)
+    # import code; code.interact(local=dict(globals(), **locals()))
+    trainer.fit(sapclip_model, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
 
 
