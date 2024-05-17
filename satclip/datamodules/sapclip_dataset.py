@@ -2,6 +2,7 @@ import os
 from typing import Any, Callable, Dict, Optional
 import collections
 
+import random
 import pandas as pd
 import rasterio
 from PIL import Image
@@ -156,10 +157,19 @@ class SAPCLIP_Dataset(NonGeoDataset):
             # with rasterio.open(self.filenames[index]) as f:
             #     data = f.read().astype(np.float32)
             # img = torch.tensor(data)
-            data = Image.open(self.filenames[index])
+            try:
+                data = Image.open(self.filenames[index])
+            # if unable to open file
+            except:
+                print('Corrupt data')
+                index = random.randint(0,1000)
+                data = Image.open(self.filenames[index])
+                point = self.points[index]
+                sample = {'point':point}
+            
             data = data.convert('RGB')
             sample["image"] = data
-            
+
         if self.transform is not None:
             sample = self.transform(sample)
             
@@ -220,11 +230,15 @@ class SAPCLIP_Dataset(NonGeoDataset):
 
 if __name__ == '__main__':
     root = '/home/a.dhakal/active/proj_smart/satclip_sentinel/images'
-    
 
     dataset = SAPCLIP_Dataset(root=root, prototype=False)
-    train_loader, val_loader = get_split_dataset(dataset, 0.1, 4, 0)
+    train_loader, val_loader = get_split_dataset(dataset, 0.1, 512, 8)
     sample = next(iter(val_loader))
+    i=0
+    for s in train_loader:
+        batch = s
+        print(f'Sample {i}')
+        i+=1
     import code; code.interact(local=dict(globals(),**locals())) 
   
     

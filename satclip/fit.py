@@ -66,7 +66,7 @@ class SAPCLIP(L.LightningModule):
             sh_embedding_dims=sh_embedding_dims,
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
-            device=self.device,
+            device='cuda',
             loss_type=loss_type
         )
         
@@ -182,7 +182,7 @@ if __name__ == '__main__':
         callbacks=[ckpt_monitors, lr_logger])
     elif args.mode == 'train':
         print('Training Run')
-        trainer = L.Trainer(precision='32', logger=wb_logger, strategy=args.strategy, 
+        trainer = L.Trainer(precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy=args.strategy, 
         num_sanity_val_steps=1, accelerator=args.accelerator, devices=args.devices, 
         callbacks=[ckpt_monitors, lr_logger], check_val_every_n_epoch=1, 
         log_every_n_steps=15, accumulate_grad_batches=args.accumulate_grad)
@@ -193,10 +193,13 @@ if __name__ == '__main__':
     dataset = SAPCLIP_Dataset(root=args.data_root, transform_type='sapclip', crop_size=args.crop_size, prototype=False)
     train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=args.batch_size,
      num_workers=args.num_workers)
+    print('DataLoaders Initialized')
 
     #initialize model
     sapclip_model = SAPCLIP(embed_dim=256, loss_type=args.loss_type)
+    print('SAPCLIP Model Initialized')
     # import code; code.interact(local=dict(globals(), **locals()))
+    print('Starting Fit!!!!')
     trainer.fit(sapclip_model, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
 
