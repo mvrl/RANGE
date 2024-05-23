@@ -239,7 +239,6 @@ if __name__ == '__main__':
         batch = s
         print(f'Sample {i}')
         i+=1
-    import code; code.interact(local=dict(globals(),**locals())) 
   
     
     

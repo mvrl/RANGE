@@ -29,7 +29,7 @@ class SAPCLIP(L.LightningModule):
         self,
         embed_dim=512,
         image_resolution=256,
-        vision_layers='SatMAE',
+        vision_layers='CLIP',
         vision_width=768,
         vision_patch_size=32,
         in_channels=4,
@@ -110,11 +110,12 @@ class SAPCLIP(L.LightningModule):
         # images = batch['image']
         # points = batch['point']
         # scale = batch['scale']        
-        location_to_image_similarity,location_to_image_label, image_to_location_similarity, image_to_location_label = self.model(batch)
-        loss = (
-            F.cross_entropy(location_to_image_similarity,location_to_image_label) +
-                    F.cross_entropy(image_to_location_similarity, image_to_location_label)
-                    )/2
+        contrastive_loss, kld_loss = self.model(batch)
+        loss = contrastive_loss + kld_loss
+        # loss = (
+        #     F.cross_entropy(location_to_image_similarity,location_to_image_label) +
+        #             F.cross_entropy(image_to_location_similarity, image_to_location_label)
+        #             )/2
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -152,9 +153,10 @@ def get_args():
     parser.add_argument('--wandb_resume', type=str, default='')
 
     #model arguments
-    parser.add_argument('--loss_type', type=str, default='deterministic')
+    parser.add_argument('--loss_type', type=str, default='probablistic')
     parser.add_argument('--embed_dim', type=int, default=256)
     parser.add_argument('--crop_size', type=int, default=224)
+    parser.add_argument('--vision_encoder', type=str, default='CLIP')
 
     args = parser.parse_args()
     return args
