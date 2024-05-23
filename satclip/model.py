@@ -10,11 +10,14 @@ import math
 import timm
 import torchgeo.models
 from torchgeo.models import ResNet18_Weights, ResNet50_Weights, ViTSmall16_Weights
-from .location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
-from .datamodules.s2geo_dataset import S2Geo
 
+from transformers import CLIPVisionModelWithProjection
 #local imports
 from .satmae import SatMAE
+from .location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
+from .datamodules.s2geo_dataset import S2Geo
+from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset
+from .vision_models.clip import Clip
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -460,13 +463,20 @@ class SatCLIP_2(nn.Module):
             self.visual.head.requires_grad_(True)
         
         elif vision_layers == 'SatMAE':
-            print('Using Scale MAE')
+            print('Using Sat MAE')
             pretrained_satmae_path = '/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/satmae_models/pretrain-vit-base-e199.pth'
             self.visual = SatMAE(pretrained_models_path=pretrained_satmae_path, device=device, fc_dim=embed_dim)
             self.visual.requires_grad_(False)
             self.visual.fc.requires_grad_(True)
             #### need to add SatMAE
-
+        
+        elif vision_layers == 'CLIP':
+            print('Using CLIP')
+            self.visual=Clip(device=device, vit_type='16')
+            self.visual.requires_grad_(False)
+            for name,param in self.visual.named_parameters():
+                if 'visual_projection' in name:
+                    param.requires_grad=True
         else:
             print('using vision transformer')
             vision_heads = vision_width // 64
@@ -487,12 +497,12 @@ class SatCLIP_2(nn.Module):
                                         self.nnet
         ).double()
         
-        self.logit_scale_l2i = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-        self.logit_scale_i2l = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
         #define the scale encoder
         self.scale_encoder = nn.Linear(3, embed_dim).double()
-        self.fc_combine = nn.Linear(2*embed_dim, embed_dim).double()
+        self.fc_mu = nn.Linear(2*embed_dim, embed_dim).double()
+        self.fc_logvar = nn.Linear(2*embed_dim, embed_dim).double()
 
         #select the appropriate function deterministic vs probablistic that prepares
         #the embeddings for the appropriate loss
@@ -506,7 +516,6 @@ class SatCLIP_2(nn.Module):
         
         else:
             raise ValueError('Invalid Value for loss type')
-        
 
         self.initialize_parameters()
 
@@ -529,6 +538,8 @@ class SatCLIP_2(nn.Module):
             return self.visual.patch_embed.proj.weight.dtype
         elif self.vision_layers=='SatMAE':
             return self.visual.fc.weight.dtype
+        elif self.vision_layers=='CLIP':
+            return self.visual.vision_model.visual_projection.weight.dtype
         else:
             return self.visual.conv1.weight.dtype
 
@@ -539,8 +550,9 @@ class SatCLIP_2(nn.Module):
         location_features = nn.functional.leaky_relu(self.location(coords.double()))
         scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
         scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
-        scaled_loc_features = self.fc_combine(scaled_loc_features)
-        return scaled_loc_features
+        scaled_loc_mu = self.fc_mu(scaled_loc_features).float()
+        scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
+        return [scaled_loc_mu, scaled_loc_logvar]
 
     def forward(self, batch):
         image = batch['image']
@@ -549,25 +561,47 @@ class SatCLIP_2(nn.Module):
         scale = batch['scale']
         label = batch['label']
 
+        #compute embeddings from both directions
         image_features = self.encode_image(image)     
-        location_features = self.encode_location(coords, hot_scale).float()
+        mu, logvar = self.encode_location(coords, hot_scale)
+
+        #compute likelihood per location for each sample [batch_size, batch_size]
+        likelihood_per_location, kld_loss = self.loss_prep(image_features, mu, logvar, label, scale)
+        logit_scale = self.logit_scale.exp()
         
-        # get the similarity matrix and the corresponding labels    
-        location_to_image_similarity, location_to_image_label,image_to_location_similarity, image_to_location_label = self.loss_prep(image_features, location_features, label)
-        
+        #compute contrastive loss
+        contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0]))
+        return contrastive_loss, kld_loss
 
-        # get rid of log in the logit scale
-        logit_scale_l2i = self.logit_scale_l2i.exp()
-        logit_scale_i2l = self.logit_scale_i2l.exp()
+def probablistic_sapclip(image_features, location_mu, location_logvar, label, intervals):
+    #normalize the image features
+    image_features = image_features/image_features.norm(dim=-1, keepdim=True)
+    #get the dimension
+    dim = location_mu.shape[-1]
+    #compute standard deviation from log(variance)
+    location_std = torch.exp(location_logvar/2)
+    #get the distribution for computed mean and std
+    location_dist = [torch.distributions.Normal(mu, std) for mu,std in zip(location_mu, location_std)]
+    isotropic_dist = torch.distributions.Normal(torch.zeros(dim), torch.ones(dim))
+    
+    #compute KLD with isotropic normal
+    kld = torch.tensor([torch.distributions.kl.kl_divergence(isotropic_dist, loc_dist).sum() for loc_dist in location_dist]).mean()
+    mask = label.unsqueeze(-1)
+    #compute likelihood for each location
+    likelihood_per_location = torch.zeros(len(intervals), len(intervals))
+    for i, loc in enumerate(location_dist):
+        log_prob = loc.log_prob(image_features)
+        summed_intervals = (log_prob*mask).sum(dim=1) #[batch_size, D]
+        # Divide by the interval lengths to get the mean across the crops
+        interval_lengths = intervals.view(-1, 1).float()
+        mean_intervals = summed_intervals / interval_lengths #[batch_size, D]
+        #finally sum across the dimensions per sample. We divide this by dims for numberical stability
+        sum_log_prob = torch.sum(mean_intervals, dim=-1)/dim #[batch_size]
+        #add log_prob to likelihood_per_location
+        likelihood_per_location[i,:] = sum_log_prob
 
-        #scale the similarity with the logit scale
-        location_to_image_similarity = logit_scale_l2i * location_to_image_similarity
-        image_to_location_similarity = logit_scale_i2l * image_to_location_similarity
-
-        # self.log('Location to Image Temperature', 1/(logit_scale_l2i.data))
-        # self.log('Image to Location Temperature', 1/(logit_scale_i2l.data))
-
-        return location_to_image_similarity,location_to_image_label, image_to_location_similarity, image_to_location_label
+    return (likelihood_per_location, kld)
+    
 
 def deterministic_sapclip(image_features, location_features, label):
     # normalized features
@@ -581,12 +615,8 @@ def deterministic_sapclip(image_features, location_features, label):
     location_to_image_label = label/torch.sum(label, dim=1, keepdim=True)
     image_to_location_label = label.t() 
     return location_to_image_similarity, location_to_image_label, image_to_location_similarity, image_to_location_label  # label shape [B,B']
-
-def probablistic_sapclip(image_features, location_features, label):
-    pass
-
-
-
+    
+    
 def convert_weights(model: nn.Module):
 
 
@@ -613,9 +643,10 @@ def convert_weights(model: nn.Module):
     model.apply(_convert_weights_to_fp16)
 
 if __name__ == '__main__':
+    data_root = '/home/a.dhakal/active/proj_smart/satclip_sentinel/images'
     embed_dim=512
     image_resolution=256
-    vision_layers='SatMAE'
+    vision_layers='CLIP'
     vision_width=768
     vision_patch_size=32
     in_channels=4
@@ -648,6 +679,20 @@ if __name__ == '__main__':
             sh_embedding_dims=sh_embedding_dims,
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
-            device='cuda'
+            loss_type='probablistic',       
+            device='cpu'
         )
+
+    dataset = SAPCLIP_Dataset(root=data_root, transform_type='sapclip', crop_size=224, prototype=False)
+    train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=8,
+     num_workers=0)
+    
+    batch = next(iter(train_loader))
+    visual_model = model.visual
+    # import code; code.interact(local=dict(globals(), **locals()))
+    
+    output = model(batch)
+    
+    
+
 
