@@ -414,14 +414,16 @@ class SatCLIP_2(nn.Module):
                  num_hidden_layers: int=2,
                  capacity: int=256,
                  device: str='cuda',
-                 loss_type: str='deterministic',
+                 loss_type: str='probablistic',
+                 alpha: float=1.0
                  *args,
                  **kwargs
                  ):
         super().__init__()
 
         self.vision_layers = vision_layers
-            
+        self.device = device
+        self.alpha = alpha
         #define the vision encoder
         if isinstance(vision_layers, (tuple, list)):
             print('using modified resnet')
@@ -475,7 +477,7 @@ class SatCLIP_2(nn.Module):
             self.visual=Clip(device=device, vit_type='16')
             self.visual.requires_grad_(False)
             for name,param in self.visual.named_parameters():
-                if 'visual_projection' in name:
+                if 'projection_layer' in name:
                     param.requires_grad=True
         else:
             print('using vision transformer')
@@ -497,7 +499,7 @@ class SatCLIP_2(nn.Module):
                                         self.nnet
         ).double()
         
-        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07)).to(self.device)
 
         #define the scale encoder
         self.scale_encoder = nn.Linear(3, embed_dim).double()
@@ -508,11 +510,7 @@ class SatCLIP_2(nn.Module):
         #the embeddings for the appropriate loss
         if loss_type=='probablistic':
             print('Using probablistic loss')
-            self.loss_prep=probablistic_sapclip
-
-        elif loss_type=='deterministic':
-            print('Using deterministic loss')
-            self.loss_prep=deterministic_sapclip
+            self.loss_prep=self.probablistic_sapclip
         
         else:
             raise ValueError('Invalid Value for loss type')
@@ -543,6 +541,35 @@ class SatCLIP_2(nn.Module):
         else:
             return self.visual.conv1.weight.dtype
 
+    def probablistic_sapclip(self, image_features, location_mu, location_logvar, label, intervals):
+        #normalize the image features
+        image_features = image_features/image_features.norm(dim=-1, keepdim=True)
+        #get the dimension
+        dim = location_mu.shape[-1]
+        #compute standard deviation from log(variance)
+        location_std = torch.exp(location_logvar/2)
+        #get the distribution for computed mean and std
+        location_dist = [torch.distributions.Normal(mu, std) for mu,std in zip(location_mu, location_std)]
+        isotropic_dist = torch.distributions.Normal(torch.zeros(dim).to(self.device), torch.ones(dim).to(self.device))
+        
+        #compute KLD with isotropic normal
+        kld = torch.tensor([torch.distributions.kl.kl_divergence(isotropic_dist, loc_dist).sum() for loc_dist in location_dist]).mean()
+        mask = label.unsqueeze(-1)
+        #compute likelihood for each location
+        likelihood_per_location = torch.zeros(len(intervals), len(intervals), device=self.device)
+        for i, loc in enumerate(location_dist):
+            # import code; code.interact(local=dict(globals(), **locals()))
+            log_prob = loc.log_prob(image_features)
+            summed_intervals = (log_prob*mask).sum(dim=1) #[batch_size, D]
+            # Divide by the interval lengths to get the mean across the crops
+            interval_lengths = intervals.view(-1, 1).float()
+            mean_intervals = summed_intervals / interval_lengths #[batch_size, D]
+            #finally sum across the dimensions per sample. We divide this by dims for numberical stability
+            sum_log_prob = torch.sum(mean_intervals, dim=-1)/dim #[batch_size]
+            #add log_prob to likelihood_per_location
+            likelihood_per_location[i,:] = sum_log_prob
+        return (likelihood_per_location, kld)
+
     def encode_image(self, image): 
         return self.visual(image.type(self.dtype()))
 
@@ -569,38 +596,14 @@ class SatCLIP_2(nn.Module):
         likelihood_per_location, kld_loss = self.loss_prep(image_features, mu, logvar, label, scale)
         logit_scale = self.logit_scale.exp()
         
+        likelihood_per_location = likelihood_per_location*logit_scale
+        
         #compute contrastive loss
-        contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0]))
+        contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0], device=self.device))
+        contrastive_loss = self.alpha * contrastive_loss 
+        kld_loss = (1-self.alpha) * kld_loss
         return contrastive_loss, kld_loss
 
-def probablistic_sapclip(image_features, location_mu, location_logvar, label, intervals):
-    #normalize the image features
-    image_features = image_features/image_features.norm(dim=-1, keepdim=True)
-    #get the dimension
-    dim = location_mu.shape[-1]
-    #compute standard deviation from log(variance)
-    location_std = torch.exp(location_logvar/2)
-    #get the distribution for computed mean and std
-    location_dist = [torch.distributions.Normal(mu, std) for mu,std in zip(location_mu, location_std)]
-    isotropic_dist = torch.distributions.Normal(torch.zeros(dim), torch.ones(dim))
-    
-    #compute KLD with isotropic normal
-    kld = torch.tensor([torch.distributions.kl.kl_divergence(isotropic_dist, loc_dist).sum() for loc_dist in location_dist]).mean()
-    mask = label.unsqueeze(-1)
-    #compute likelihood for each location
-    likelihood_per_location = torch.zeros(len(intervals), len(intervals))
-    for i, loc in enumerate(location_dist):
-        log_prob = loc.log_prob(image_features)
-        summed_intervals = (log_prob*mask).sum(dim=1) #[batch_size, D]
-        # Divide by the interval lengths to get the mean across the crops
-        interval_lengths = intervals.view(-1, 1).float()
-        mean_intervals = summed_intervals / interval_lengths #[batch_size, D]
-        #finally sum across the dimensions per sample. We divide this by dims for numberical stability
-        sum_log_prob = torch.sum(mean_intervals, dim=-1)/dim #[batch_size]
-        #add log_prob to likelihood_per_location
-        likelihood_per_location[i,:] = sum_log_prob
-
-    return (likelihood_per_location, kld)
     
 
 def deterministic_sapclip(image_features, location_features, label):
@@ -680,7 +683,7 @@ if __name__ == '__main__':
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
             loss_type='probablistic',       
-            device='cpu'
+            device='cuda'
         )
 
     dataset = SAPCLIP_Dataset(root=data_root, transform_type='sapclip', crop_size=224, prototype=False)

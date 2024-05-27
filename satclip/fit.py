@@ -45,7 +45,7 @@ class SAPCLIP(L.LightningModule):
         weight_decay=0.01,
         num_hidden_layers=2,
         capacity=256,        
-        loss_type='deterministic'
+        loss_type='probablistic'
     ) -> None:
         super().__init__()
 
@@ -111,21 +111,23 @@ class SAPCLIP(L.LightningModule):
         # points = batch['point']
         # scale = batch['scale']        
         contrastive_loss, kld_loss = self.model(batch)
-        loss = contrastive_loss + kld_loss
-        # loss = (
-        #     F.cross_entropy(location_to_image_similarity,location_to_image_label) +
-        #             F.cross_entropy(image_to_location_similarity, image_to_location_label)
-        #             )/2
-        return loss
+
+        return contrastive_loss, kld_loss
 
     def training_step(self, batch, batch_idx):
-        loss = self(batch, batch_idx)
-        self.log("train_loss", loss, batch_size=len(batch), prog_bar=True)
+        contrastive_loss, kld_loss = self(batch, batch_idx)
+        loss = contrastive_loss + kld_loss
+        self.log('train_contrastive_loss', contrastive_loss, batch_size=len(batch), prog_bar=True)
+        self.log('train_kld_loss', kld_loss, batch_size=len(batch), prog_bar=True)
+        self.log('train_loss', loss, batch_size=len(batch), prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss = self(batch, batch_idx)
-        self.log("val_loss", loss, batch_size=len(batch), prog_bar=True)
+        contrastive_loss, kld_loss = self(batch, batch_idx)
+        loss = contrastive_loss + kld_loss
+        self.log('val_contrastive_loss', contrastive_loss, batch_size=len(batch), prog_bar=True)
+        self.log('val_kld_loss', kld_loss, batch_size=len(batch), prog_bar=True)
+        self.log('val_loss', loss, batch_size=len(batch), prog_bar=True)
         return loss    
 
 def get_args():
@@ -187,7 +189,7 @@ if __name__ == '__main__':
         trainer = L.Trainer(precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy=args.strategy, 
         num_sanity_val_steps=1, accelerator=args.accelerator, devices=args.devices, 
         callbacks=[ckpt_monitors, lr_logger], check_val_every_n_epoch=1, 
-        log_every_n_steps=15, accumulate_grad_batches=args.accumulate_grad)
+        log_every_n_steps=2, accumulate_grad_batches=args.accumulate_grad)
     else:
         raise ValueError('Invalid value for mode')
     
@@ -198,7 +200,7 @@ if __name__ == '__main__':
     print('DataLoaders Initialized')
 
     #initialize model
-    sapclip_model = SAPCLIP(embed_dim=256, loss_type=args.loss_type)
+    sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type)
     print('SAPCLIP Model Initialized')
     # import code; code.interact(local=dict(globals(), **locals()))
     print('Starting Fit!!!!')
