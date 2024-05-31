@@ -20,9 +20,9 @@ class Clip(pl.LightningModule):
         self.projection_layer = nn.Linear(512, embed_dim)
     def forward(self,x):
         batch_tensors = self.vision_model(x)
-        unnormalized_batch_embeddings = batch_tensors.image_embeds
-        output_embeddings = self.projection_layer(unnormalized_batch_embeddings)
-        return output_embeddings
+        output = batch_tensors.image_embeds
+        output = self.projection_layer(output)
+        return output
 
 if __name__ == '__main__':
     model = Clip(256, 'cuda', '16')

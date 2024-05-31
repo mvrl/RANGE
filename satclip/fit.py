@@ -45,7 +45,8 @@ class SAPCLIP(L.LightningModule):
         weight_decay=0.01,
         num_hidden_layers=2,
         capacity=256,        
-        loss_type='probablistic'
+        loss_type='probablistic',
+        alpha=1.0
     ) -> None:
         super().__init__()
 
@@ -67,7 +68,8 @@ class SAPCLIP(L.LightningModule):
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
             device='cuda',
-            loss_type=loss_type
+            loss_type=loss_type,
+            alpha=alpha
         )
         
         self.learning_rate = learning_rate
@@ -156,6 +158,7 @@ def get_args():
 
     #model arguments
     parser.add_argument('--loss_type', type=str, default='probablistic')
+    parser.add_argument('--alpha', type=float, default=1.0)
     parser.add_argument('--embed_dim', type=int, default=256)
     parser.add_argument('--crop_size', type=int, default=224)
     parser.add_argument('--vision_encoder', type=str, default='CLIP')
@@ -200,7 +203,8 @@ if __name__ == '__main__':
     print('DataLoaders Initialized')
 
     #initialize model
-    sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type)
+    sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
+    alpha=args.alpha)
     print('SAPCLIP Model Initialized')
     # import code; code.interact(local=dict(globals(), **locals()))
     print('Starting Fit!!!!')

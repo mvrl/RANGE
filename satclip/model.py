@@ -342,6 +342,7 @@ class SatCLIP(nn.Module):
         self.location = LocationEncoder(self.posenc, 
                                         self.nnet
         ).double()
+        import code; code.interact(local=dict(globals(), **locals()))
         
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -415,7 +416,7 @@ class SatCLIP_2(nn.Module):
                  capacity: int=256,
                  device: str='cuda',
                  loss_type: str='probablistic',
-                 alpha: float=1.0
+                 alpha: float=1.0,
                  *args,
                  **kwargs
                  ):
@@ -553,7 +554,7 @@ class SatCLIP_2(nn.Module):
         isotropic_dist = torch.distributions.Normal(torch.zeros(dim).to(self.device), torch.ones(dim).to(self.device))
         
         #compute KLD with isotropic normal
-        kld = torch.tensor([torch.distributions.kl.kl_divergence(isotropic_dist, loc_dist).sum() for loc_dist in location_dist]).mean()
+        kld = torch.tensor([torch.distributions.kl.kl_divergence(loc_dist, isotropic_dist).sum() for loc_dist in location_dist]).mean()
         mask = label.unsqueeze(-1)
         #compute likelihood for each location
         likelihood_per_location = torch.zeros(len(intervals), len(intervals), device=self.device)
@@ -577,7 +578,7 @@ class SatCLIP_2(nn.Module):
         location_features = nn.functional.leaky_relu(self.location(coords.double()))
         scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
         scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
-        scaled_loc_mu = self.fc_mu(scaled_loc_features).float()
+        scaled_loc_mu = nn.functional.leaky_relu(self.fc_mu(scaled_loc_features).float())
         scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
         return [scaled_loc_mu, scaled_loc_logvar]
 
