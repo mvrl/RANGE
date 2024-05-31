@@ -544,7 +544,7 @@ class SatCLIP_2(nn.Module):
 
     def probablistic_sapclip(self, image_features, location_mu, location_logvar, label, intervals):
         #normalize the image features
-        image_features = image_features/image_features.norm(dim=-1, keepdim=True)
+        # image_features = image_features/image_features.norm(dim=-1, keepdim=True)
         #get the dimension
         dim = location_mu.shape[-1]
         #compute standard deviation from log(variance)
