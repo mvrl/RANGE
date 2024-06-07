@@ -119,17 +119,17 @@ class SAPCLIP(L.LightningModule):
     def training_step(self, batch, batch_idx):
         contrastive_loss, kld_loss = self(batch, batch_idx)
         loss = contrastive_loss + kld_loss
-        self.log('train_contrastive_loss', contrastive_loss, batch_size=len(batch), prog_bar=True)
-        self.log('train_kld_loss', kld_loss, batch_size=len(batch), prog_bar=True)
-        self.log('train_loss', loss, batch_size=len(batch), prog_bar=True)
+        self.log('train_contrastive_loss', contrastive_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+        self.log('train_kld_loss', kld_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+        self.log('train_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         contrastive_loss, kld_loss = self(batch, batch_idx)
         loss = contrastive_loss + kld_loss
-        self.log('val_contrastive_loss', contrastive_loss, batch_size=len(batch), prog_bar=True)
-        self.log('val_kld_loss', kld_loss, batch_size=len(batch), prog_bar=True)
-        self.log('val_loss', loss, batch_size=len(batch), prog_bar=True)
+        self.log('val_contrastive_loss', contrastive_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+        self.log('val_kld_loss', kld_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+        self.log('val_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
         return loss    
 
 def get_args():
