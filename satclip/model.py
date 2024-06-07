@@ -416,7 +416,7 @@ class SatCLIP_2(nn.Module):
                  capacity: int=256,
                  device: str='cuda',
                  loss_type: str='probablistic',
-                 alpha: float=1.0,
+                 contrastive_wt: float=1.0,
                  *args,
                  **kwargs
                  ):
@@ -424,7 +424,7 @@ class SatCLIP_2(nn.Module):
 
         self.vision_layers = vision_layers
         self.device = device
-        self.alpha = alpha
+        self.contrastive_wt = contrastive_wt
         #define the vision encoder
         if isinstance(vision_layers, (tuple, list)):
             print('using modified resnet')
@@ -601,8 +601,8 @@ class SatCLIP_2(nn.Module):
         
         #compute contrastive loss
         contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0], device=self.device))
-        contrastive_loss = self.alpha * contrastive_loss 
-        kld_loss = (1-self.alpha) * kld_loss
+        contrastive_loss = self.contrastive_wt * contrastive_loss 
+        kld_loss = (1-self.contrastive_wt) * kld_loss
         return contrastive_loss, kld_loss
 
     

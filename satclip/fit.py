@@ -46,7 +46,7 @@ class SAPCLIP(L.LightningModule):
         num_hidden_layers=2,
         capacity=256,        
         loss_type='probablistic',
-        alpha=1.0
+        contrastive_wt=1.0
     ) -> None:
         super().__init__()
 
@@ -69,7 +69,7 @@ class SAPCLIP(L.LightningModule):
             capacity=capacity,
             device='cuda',
             loss_type=loss_type,
-            alpha=alpha
+            contrastive_wt=contrastive_wt
         )
         
         self.learning_rate = learning_rate
@@ -148,7 +148,7 @@ def get_args():
     parser.add_argument('--accumulate_grad', type=int, default=16)
 
     #logger arguments
-    parser.add_argument('--log_dir', type=str, default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/logs')
+    parser.add_argument('--log_dir', type=str, default='/scratch/a.dhakal/hyper_satclip/logs')
     parser.add_argument('--ckpt_path', type=str, default='')
     parser.add_argument('--ckpt_mode', type=str, default='hard')
     parser.add_argument('--project_name', type=str, default='SAPCLIP')
@@ -158,7 +158,7 @@ def get_args():
 
     #model arguments
     parser.add_argument('--loss_type', type=str, default='probablistic')
-    parser.add_argument('--alpha', type=float, default=1.0)
+    parser.add_argument('--contrastive_wt', type=float, default=1.0)
     parser.add_argument('--embed_dim', type=int, default=256)
     parser.add_argument('--crop_size', type=int, default=224)
     parser.add_argument('--vision_encoder', type=str, default='CLIP')
@@ -204,7 +204,7 @@ if __name__ == '__main__':
 
     #initialize model
     sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
-    alpha=args.alpha)
+    contrastive_wt=args.contrastive_wt)
     print('SAPCLIP Model Initialized')
     # import code; code.interact(local=dict(globals(), **locals()))
     print('Starting Fit!!!!')
