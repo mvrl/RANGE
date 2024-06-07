@@ -30,9 +30,9 @@ def get_split_dataset(dataset,
     train_split = 1-val_split
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_split, val_split])
     train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers,
-     shuffle=True, collate_fn=collate_fn)
+     shuffle=True, collate_fn=collate_fn, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=False,
-    collate_fn=collate_fn)    
+    collate_fn=collate_fn, drop_last=True)    
     return train_loader, val_loader
 
 #manage the shape of the batch
