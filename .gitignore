@@ -3,3 +3,5 @@ data/
 logs/
 fit.sh
 random/
+precompute_satclip.py
+
