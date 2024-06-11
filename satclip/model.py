@@ -392,6 +392,10 @@ class SatCLIP(nn.Module):
         return logits_per_image, logits_per_location
 
 
+def compute_isotropic_kld(mean, std):
+    kld = -1/2*(1+torch.log(std**2)-std**2-mean**2).sum(dim=-1)
+    return kld
+
 #my satclip class
 class SatCLIP_2(nn.Module):
     def __init__(self,
@@ -546,15 +550,16 @@ class SatCLIP_2(nn.Module):
         #normalize the image features
         # image_features = image_features/image_features.norm(dim=-1, keepdim=True)
         #get the dimension
+        import code; code.interact(local=dict(globals(), **locals()))
         dim = location_mu.shape[-1]
         #compute standard deviation from log(variance)
         location_std = torch.exp(location_logvar/2)
         #get the distribution for computed mean and std
-        location_dist = [torch.distributions.Normal(mu, std) for mu,std in zip(location_mu, location_std)]
-        isotropic_dist = torch.distributions.Normal(torch.zeros(dim).to(self.device), torch.ones(dim).to(self.device))
+        location_dist = [torch.distributions.MultivariateNormal(mu, torch.diag(std)) for mu,std in zip(location_mu, location_std)]
+        # isotropic_dist = torch.distributions.MultivariateNormal(torch.zeros(dim).to(self.device), torch.eye(dim).to(self.device))
         
         #compute KLD with isotropic normal
-        kld = torch.tensor([torch.distributions.kl.kl_divergence(loc_dist, isotropic_dist).sum() for loc_dist in location_dist]).mean()
+        kld = compute_isotropic_kld(location_mu, location_std).mean()
         mask = label.unsqueeze(-1)
         #compute likelihood for each location
         likelihood_per_location = torch.zeros(len(intervals), len(intervals), device=self.device)
