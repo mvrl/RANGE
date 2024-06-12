@@ -12,12 +12,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from tqdm import tqdm
+import h5py as h5
 
 import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
 #relative imports 
-from .transforms import get_sapclip_transform
+from .transforms import get_sapclip_transform, get_none_transform
+
 
 
 CHECK_MIN_FILESIZE = 10000 # 10kb
@@ -324,7 +326,9 @@ class SAPCLIP_Dataset(NonGeoDataset):
         elif transform_type=='sapclip':
             self.transform = get_sapclip_transform(resize_crop_size=crop_size)
         else:
-            raise ValueError('Invalid transform type')
+            print('No transform used')
+            self.transform=None
+
 
     def __getitem__(self, index: int) -> Dict[str, Tensor]:
         """Return an index within the dataset.
@@ -355,7 +359,10 @@ class SAPCLIP_Dataset(NonGeoDataset):
 
         if self.transform is not None:
             sample = self.transform(sample)
-            
+        else:
+        
+            sample['image'] = np.array(data)
+            sample['point'] = point.numpy()
         return sample
 
     def __len__(self) -> int:
@@ -408,20 +415,78 @@ class SAPCLIP_Dataset(NonGeoDataset):
 
         return fig
 
+class SAPCLIP_Dataset_H5(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        input_path: str,
+        transform_type: str = 'sapclip',
+        crop_size: int = 256, 
+    ):
+        self.h5_file = h5.File(input_path, 'r')
+        self.images = self.h5_file['images']
+        self.points = self.h5_file['lon_lat']
+        
+        #define the trasnform type
+        if transform_type=='pretrained':
+            self.transform = get_pretrained_s2_train_transform(resize_crop_size=crop_size)
+        elif transform_type=='default':
+            self.transform = get_s2_train_transform()
+        elif transform_type=='sapclip':
+            self.transform = get_sapclip_transform(resize_crop_size=crop_size)
+        else:
+            print('No transform used')
+            self.transform=None
 
+    def __len__(self):
+        return len(self.points)
+
+    def __getitem__(self, idx):
+        image = Image.fromarray(self.images[idx]).convert('RGB')
+        point = self.points[idx]
+        sample={}
+        sample['image'] = image
+        sample['point'] = torch.tensor(point).double()
+
+        #apply transformation
+        if self.transform is not None:
+            sample = self.transform(sample)
+        else:
+            sample=sample
+        
+        return sample
+        
 
 
 if __name__ == '__main__':
-    root = '/home/a.dhakal/active/proj_smart/satclip_sentinel/images'
+    # 
 
-    dataset = SAPCLIP_Dataset(root=root, prototype=False)
-    train_loader, val_loader = get_split_dataset(dataset, 0.1, 512, 8)
-    sample = next(iter(val_loader))
-    i=0
-    for s in train_loader:
-        batch = s
-        print(f'Sample {i}')
-        i+=1
-  
+    # dataset = SAPCLIP_Dataset(root=root, prototype=False)
+    # train_loader, val_loader = get_split_dataset(dataset, 0.1, 512, 8)
+    # sample = next(iter(val_loader))
+    # i=0
+    # for s in train_loader:
+    #     batch = s
+    #     print(f'Sample {i}')
+    #     i+=1
+    data_type='h5'
+    if data_type=='h5':
+        print('H5')
+        path = '/scratch/a.dhakal/hyper_satclip/data/h5_data/satclip_data.h5'
+        dataset = SAPCLIP_Dataset_H5(input_path=path, transform_type='sapclip')
+    elif data_type=='normal':
+        print('Normal')
+        path = '/scratch/a.dhakal/hyper_satclip/data/satclip_data/satclip_sentinel/images'
+        dataset = SAPCLIP_Dataset(root=path, transform_type='sapclip', crop_size=224, prototype=False)
+    # handle = h5.File(h5_path, 'r')
+    # images = handle['images']
+    # points = handle['lon_lat']
+    
+    train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=512,
+     num_workers=8)
+    
+    from tqdm import tqdm
+    for batch in tqdm(train_loader):
+        b = batch
+    import code; code.interact(local=dict(globals(), **locals()))
     
     
