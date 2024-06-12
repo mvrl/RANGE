@@ -16,7 +16,7 @@ from lightning.pytorch.cli import LightningCLI
 
 #local imports 
 from .model import SatCLIP_2
-from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset
+from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset, SAPCLIP_Dataset_H5
 
 torch.set_float32_matmul_precision('high')
 
@@ -136,6 +136,7 @@ def get_args():
     parser = ArgumentParser()
     #dataloader arguments
     parser.add_argument('--num_workers', type=int, default=8)
+    parser.add_argument('--dataset_type', type=str, default='h5')
     parser.add_argument('--batch_size',type=int, default=512)
     parser.add_argument('--data_root', type=str, default='/home/a.dhakal/active/proj_smart/satclip_sentinel/images')
 
@@ -197,7 +198,11 @@ if __name__ == '__main__':
         raise ValueError('Invalid value for mode')
     
     #get dataloaders
-    dataset = SAPCLIP_Dataset(root=args.data_root, transform_type='sapclip', crop_size=args.crop_size, prototype=False)
+    if args.dataset_type=='normal':
+        dataset = SAPCLIP_Dataset(root=args.data_root, transform_type='sapclip', crop_size=args.crop_size, prototype=False)
+    elif args.dataset_type=='h5':
+        dataset = SAPCLIP_Dataset_H5(input_path=args.data_root, transform_type='sapclip', crop_size=args.crop_size)
+
     train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=args.batch_size,
      num_workers=args.num_workers)
     print('DataLoaders Initialized')
