@@ -34,6 +34,13 @@ def get_train_transform(resize_crop_size = 256,
 
     return transform
 
+
+def get_none_transform():
+    def transform(sample):
+        image = sample['image'].numpy()
+        point = sample['point']
+        return dict(image=image, point=point)
+
 def get_s2_train_transform(resize_crop_size = 256):
     augmentation = T.Compose([
         T.RandomCrop(resize_crop_size),
