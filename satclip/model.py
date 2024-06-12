@@ -16,7 +16,7 @@ from transformers import CLIPVisionModelWithProjection
 from .satmae import SatMAE
 from .location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
 from .datamodules.s2geo_dataset import S2Geo
-from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset
+from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset, SAPCLIP_Dataset_H5
 from .vision_models.clip import Clip
 
 class Bottleneck(nn.Module):
@@ -342,7 +342,6 @@ class SatCLIP(nn.Module):
         self.location = LocationEncoder(self.posenc, 
                                         self.nnet
         ).double()
-        import code; code.interact(local=dict(globals(), **locals()))
         
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -550,7 +549,7 @@ class SatCLIP_2(nn.Module):
         #normalize the image features
         # image_features = image_features/image_features.norm(dim=-1, keepdim=True)
         #get the dimension
-        import code; code.interact(local=dict(globals(), **locals()))
+        
         dim = location_mu.shape[-1]
         #compute standard deviation from log(variance)
         location_std = torch.exp(location_logvar/2)
@@ -601,9 +600,9 @@ class SatCLIP_2(nn.Module):
         #compute likelihood per location for each sample [batch_size, batch_size]
         likelihood_per_location, kld_loss = self.loss_prep(image_features, mu, logvar, label, scale)
         logit_scale = self.logit_scale.exp()
-        
+
         likelihood_per_location = likelihood_per_location*logit_scale
-        
+
         #compute contrastive loss
         contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0], device=self.device))
         contrastive_loss = self.contrastive_wt * contrastive_loss 
