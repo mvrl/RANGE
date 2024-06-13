@@ -605,8 +605,8 @@ class SatCLIP_2(nn.Module):
 
         #compute contrastive loss
         contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0], device=self.device))
-        contrastive_loss = self.contrastive_wt * contrastive_loss 
-        kld_loss = (1-self.contrastive_wt) * kld_loss
+        # contrastive_loss = self.contrastive_wt * contrastive_loss 
+        # kld_loss = (1-self.contrastive_wt) * kld_loss
         return contrastive_loss, kld_loss
 
     

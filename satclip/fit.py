@@ -118,7 +118,7 @@ class SAPCLIP(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         contrastive_loss, kld_loss = self(batch, batch_idx)
-        loss = contrastive_loss + kld_loss
+        loss = contrastive_loss + 0.01 * kld_loss
         self.log('train_contrastive_loss', contrastive_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
         self.log('train_kld_loss', kld_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
         self.log('train_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
