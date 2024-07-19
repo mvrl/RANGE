@@ -395,6 +395,8 @@ def compute_isotropic_kld(mean, std):
     kld = -1/2*(1+torch.log(std**2)-std**2-mean**2).sum(dim=-1)
     return kld
 
+
+
 #my satclip class
 class SatCLIP_2(nn.Module):
     def __init__(self,
@@ -419,7 +421,6 @@ class SatCLIP_2(nn.Module):
                  capacity: int=256,
                  device: str='cuda',
                  loss_type: str='probablistic',
-                 contrastive_wt: float=1.0,
                  *args,
                  **kwargs
                  ):
@@ -427,7 +428,6 @@ class SatCLIP_2(nn.Module):
 
         self.vision_layers = vision_layers
         self.device = device
-        self.contrastive_wt = contrastive_wt
         #define the vision encoder
         if isinstance(vision_layers, (tuple, list)):
             print('using modified resnet')
@@ -545,6 +545,7 @@ class SatCLIP_2(nn.Module):
         else:
             return self.visual.conv1.weight.dtype
 
+
     def probablistic_sapclip(self, image_features, location_mu, location_logvar, label, intervals):
         #do not normalize the image features
         # image_features = image_features/image_features.norm(dim=-1, keepdim=True)
@@ -632,8 +633,7 @@ class SatCLIP_2(nn.Module):
 
         #compute contrastive loss
         contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0], device=self.device))
-        # contrastive_loss = self.contrastive_wt * contrastive_loss 
-        # kld_loss = (1-self.contrastive_wt) * kld_loss
+        
         return contrastive_loss, kld_loss
 
     

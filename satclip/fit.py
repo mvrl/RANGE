@@ -46,7 +46,7 @@ class SAPCLIP(L.LightningModule):
         num_hidden_layers=2,
         capacity=256,        
         loss_type='probablistic',
-        contrastive_wt=1.0
+       anneal_T=0.001
     ) -> None:
         super().__init__()
 
@@ -69,12 +69,22 @@ class SAPCLIP(L.LightningModule):
             capacity=capacity,
             device='cuda',
             loss_type=loss_type,
-            contrastive_wt=contrastive_wt
         )
         
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
+        self.anneal_T = anneal_T
+        self.delta_beta = 2/self.anneal_T
+        self.kld_wt=0
         self.save_hyperparameters()
+
+    def anneal_beta(self):
+        if self.global_step%self.anneal_T == 0:
+            self.kld_wt = 0
+        elif self.global_step%self.anneal_T>self.anneal_T/2:
+            self.kld_wt = 1
+        else:
+            self.kld_wt+=self.delta_beta
 
     #configure optimizers 
     def configure_optimizers(self):
@@ -118,10 +128,12 @@ class SAPCLIP(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         contrastive_loss, kld_loss = self(batch, batch_idx)
-        loss = contrastive_loss + 0.01 * kld_loss
+        loss = contrastive_loss + self.kld_wt * kld_loss
+        self.anneal_beta()
         self.log('train_contrastive_loss', contrastive_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
         self.log('train_kld_loss', kld_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
         self.log('train_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+        self.log('beta', self.kld_wt, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -159,6 +171,7 @@ def get_args():
 
     #model arguments
     parser.add_argument('--loss_type', type=str, default='probablistic')
+    parser.add_argument('--anneal_T', type=int, default=370)
     parser.add_argument('--contrastive_wt', type=float, default=1.0)
     parser.add_argument('--embed_dim', type=int, default=256)
     parser.add_argument('--crop_size', type=int, default=224)
@@ -209,7 +222,7 @@ if __name__ == '__main__':
 
     #initialize model
     sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
-    contrastive_wt=args.contrastive_wt)
+    kld_wt=args.kld_wt)
     print('SAPCLIP Model Initialized')
     # import code; code.interact(local=dict(globals(), **locals()))
     print('Starting Fit!!!!')
