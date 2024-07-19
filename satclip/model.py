@@ -546,18 +546,44 @@ class SatCLIP_2(nn.Module):
             return self.visual.conv1.weight.dtype
 
     def probablistic_sapclip(self, image_features, location_mu, location_logvar, label, intervals):
-        #normalize the image features
+        #do not normalize the image features
         # image_features = image_features/image_features.norm(dim=-1, keepdim=True)
         #get the dimension
         
+        ### this is used for Multivariate Normal from here ##########
+        # dim = location_mu.shape[-1]
+        # #compute standard deviation from log(variance)
+        # location_std = torch.exp(location_logvar/2)
+        # #get the distribution for computed mean and std
+        # location_dist = [torch.distributions.MultivariateNormal(mu, torch.diag(std)) for mu,std in zip(location_mu, location_std)]
+        # # isotropic_dist = torch.distributions.MultivariateNormal(torch.zeros(dim).to(self.device), torch.eye(dim).to(self.device))
+        
+        # #compute KLD with isotropic normal
+        # kld = compute_isotropic_kld(location_mu, location_std).mean()
+        # mask = label.unsqueeze(-1)
+        # #compute likelihood for each location
+        # likelihood_per_location = torch.zeros(len(intervals), len(intervals), device=self.device)
+        # for i, loc in enumerate(location_dist):
+        #     # import code; code.interact(local=dict(globals(), **locals()))
+        #     log_prob = loc.log_prob(image_features)
+        #     summed_intervals = (log_prob*mask).sum(dim=1) #[batch_size, D]
+        #     # Divide by the interval lengths to get the mean across the crops
+        #     interval_lengths = intervals.view(-1, 1).float()
+        #     mean_intervals = summed_intervals / interval_lengths #[batch_size, D]
+        #     #finally sum across the dimensions per sample. We divide this by dims for numberical stability
+        #     sum_log_prob = torch.sum(mean_intervals, dim=-1)/dim #[batch_size]
+        #     #add log_prob to likelihood_per_location
+        #     likelihood_per_location[i,:] = sum_log_prob
+        ##### to here ##########
+        #get the dimension
         dim = location_mu.shape[-1]
         #compute standard deviation from log(variance)
         location_std = torch.exp(location_logvar/2)
         #get the distribution for computed mean and std
-        location_dist = [torch.distributions.MultivariateNormal(mu, torch.diag(std)) for mu,std in zip(location_mu, location_std)]
-        # isotropic_dist = torch.distributions.MultivariateNormal(torch.zeros(dim).to(self.device), torch.eye(dim).to(self.device))
-        
+        location_dist = [torch.distributions.Normal(mu, std) for mu,std in zip(location_mu, location_std)]
+        isotropic_dist = torch.distributions.Normal(torch.zeros(dim).to(self.device), torch.ones(dim).to(self.device))
         #compute KLD with isotropic normal
+        # kld = torch.tensor([torch.distributions.kl.kl_divergence(loc_dist, isotropic_dist).sum() for loc_dist in location_dist]).mean()
         kld = compute_isotropic_kld(location_mu, location_std).mean()
         mask = label.unsqueeze(-1)
         #compute likelihood for each location
@@ -573,6 +599,7 @@ class SatCLIP_2(nn.Module):
             sum_log_prob = torch.sum(mean_intervals, dim=-1)/dim #[batch_size]
             #add log_prob to likelihood_per_location
             likelihood_per_location[i,:] = sum_log_prob
+
         return (likelihood_per_location, kld)
 
     def encode_image(self, image): 

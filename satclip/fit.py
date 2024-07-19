@@ -144,7 +144,7 @@ def get_args():
     parser.add_argument('--max_epochs', type=int, default=10)
     parser.add_argument('--strategy', type=str, default='ddp_find_unused_parameters_false')
     parser.add_argument('--accelerator', type=str, default='gpu')
-    parser.add_argument('--devices', type=int, default=1)
+    parser.add_argument('--devices', default=1)
     parser.add_argument('--mode', type=str, default='dev')
     parser.add_argument('--accumulate_grad', type=int, default=16)
 
