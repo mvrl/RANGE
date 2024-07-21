@@ -222,7 +222,7 @@ if __name__ == '__main__':
 
     #initialize model
     sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
-    kld_wt=args.kld_wt)
+    anneal_T=args.anneal_T)
     print('SAPCLIP Model Initialized')
     # import code; code.interact(local=dict(globals(), **locals()))
     print('Starting Fit!!!!')
