@@ -85,6 +85,13 @@ class SAPCLIP(L.LightningModule):
             self.kld_wt = 1
         else:
             self.kld_wt+=self.delta_beta
+    
+    #increase upto 0.5 and drop back to 0
+    def anneal_beta_2(self):
+        if self.kld_wt>=0.35:
+            self.kld_wt=0     
+        else:
+            self.kld_wt+=self.delta_beta
 
     #configure optimizers 
     def configure_optimizers(self):
@@ -129,7 +136,7 @@ class SAPCLIP(L.LightningModule):
     def training_step(self, batch, batch_idx):
         contrastive_loss, kld_loss = self(batch, batch_idx)
         loss = contrastive_loss + self.kld_wt * kld_loss
-        self.anneal_beta()
+        self.anneal_beta_2()
         self.log('train_contrastive_loss', contrastive_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
         self.log('train_kld_loss', kld_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
         self.log('train_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
