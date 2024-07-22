@@ -28,6 +28,11 @@ def bounding_box_from_circle(lat_center, lon_center, radius = 1000,
 
   return l,b,r,t
 
+def sample_gaussian_tensors(mu, logsigma, num_samples):
+    eps = torch.randn(mu.size(0), num_samples, mu.size(1), dtype=mu.dtype, device=mu.device)
+    samples = eps.mul(torch.exp(logsigma.unsqueeze(1))).add_(mu.unsqueeze(1))
+    return samples
+
 if __name__ == '__main__':
     bbox = bounding_box_from_circle(41.33131, -124.6528, radius=8000)
     print(bbox)
