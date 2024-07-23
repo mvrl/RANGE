@@ -261,6 +261,7 @@ class SatCLIP_2(nn.Module):
 
         #select the appropriate function deterministic vs probablistic that prepares
         #the embeddings for the appropriate loss
+        self.loss_type=loss_type
         if loss_type=='probablistic':
             print('Using probablistic loss')
             self.loss_prep=self.probablistic_sapclip
@@ -269,27 +270,12 @@ class SatCLIP_2(nn.Module):
             print('Using pcme loss')
             self.loss_prep=self.pcme_loss
             self.img_fc_mu = nn.Linear(embed_dim, embed_dim)
-            self.img_fc_logvar = nn.Linear(embed_dim ,embed_dim)
+            self.img_fc_logsigma = nn.Linear(embed_dim ,embed_dim)
             self.pcme_criterion = MCSoftContrastiveLoss()
         
         else:
             raise ValueError('Invalid Value for loss type')
 
-        self.initialize_parameters()
-
-    def initialize_parameters(self):
-        if isinstance(self.visual, ModifiedResNet):
-            if self.visual.attnpool is not None:
-                std = self.visual.attnpool.c_proj.in_features ** -0.5
-                nn.init.normal_(self.visual.attnpool.q_proj.weight, std=std)
-                nn.init.normal_(self.visual.attnpool.k_proj.weight, std=std)
-                nn.init.normal_(self.visual.attnpool.v_proj.weight, std=std)
-                nn.init.normal_(self.visual.attnpool.c_proj.weight, std=std)
-
-            for resnet_block in [self.visual.layer1, self.visual.layer2, self.visual.layer3, self.visual.layer4]:
-                for name, param in resnet_block.named_parameters():
-                    if name.endswith("bn3.weight"):
-                        nn.init.zeros_(param)
 
     def dtype(self):
         if isinstance(self.visual, timm.models.vision_transformer.VisionTransformer):
@@ -362,7 +348,7 @@ class SatCLIP_2(nn.Module):
     def pcme_loss(self, image_features, location_mu, location_logsigma, intervals):
         batch_size, dim = location_mu.shape
         
-        import code; code.interact(local=dict(globals(), **locals()))
+        
         #compute the mean of images from the same sample
         image_features_mean = torch.zeros_like(location_mu)
         start=0
@@ -375,10 +361,10 @@ class SatCLIP_2(nn.Module):
         img_logsigma = self.img_fc_logsigma(image_features_mean)
 
         #sample features from distribution
-        image_samples = sample_gaussian_tensors(img_mu, img_logsigma, 5)
+        img_samples = sample_gaussian_tensors(img_mu, img_logsigma, 5)
         loc_samples = sample_gaussian_tensors(location_mu, location_logsigma, 5)
 
-        pcme_loss, pcme_loss_dict = self.pcme_criterion(image_samples, loc_samples, image_logsigma, location_logsigma)
+        pcme_loss, pcme_loss_dict = self.pcme_criterion(img_samples, loc_samples, img_logsigma, location_logsigma)
         
         return (pcme_loss, pcme_loss_dict)
 
@@ -404,19 +390,20 @@ class SatCLIP_2(nn.Module):
         image_features = self.encode_image(image)     
         mu, logvar = self.encode_location(coords, hot_scale)
 
-        if self.loss_prep=='pcme':
+        if self.loss_type=='pcme':
             pcme_loss, pcme_loss_dict = self.loss_prep(image_features, mu, logvar, scale)
             return (pcme_loss, pcme_loss_dict)
-        #compute likelihood per location for each sample [batch_size, batch_size]
-        likelihood_per_location, kld_loss = self.loss_prep(image_features, mu, logvar, label, scale)
-        logit_scale = self.logit_scale.exp()
+        else:
+            #compute likelihood per location for each sample [batch_size, batch_size]
+            likelihood_per_location, kld_loss = self.loss_prep(image_features, mu, logvar, scale)
+            logit_scale = self.logit_scale.exp()
 
-        likelihood_per_location = likelihood_per_location*logit_scale
+            likelihood_per_location = likelihood_per_location*logit_scale
 
-        #compute contrastive loss
-        contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0], device=self.device))
-        
-        return contrastive_loss, kld_loss
+            #compute contrastive loss
+            contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0], device=self.device))
+            
+            return contrastive_loss, kld_loss
 
     
 

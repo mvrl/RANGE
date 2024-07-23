@@ -117,7 +117,7 @@ class MCSoftContrastiveLoss(nn.Module):
     Output: torch.Tensor
         If :attr:`reduction` is ``'none'``, then :math:`(N)`.
     """
-    def __init__(self, reduction='sum'):
+    def __init__(self, num_samples=5, reduction='sum'):
         super().__init__()
         if reduction not in {'mean', 'sum', None}:
             raise ValueError('unknown reduction {}'.format(reduction))
@@ -132,7 +132,7 @@ class MCSoftContrastiveLoss(nn.Module):
         self.register_parameter('shift', shift)
         self.register_parameter('negative_scale', negative_scale)
 
-        self.num_samples = config.num_samples
+        self.num_samples = num_samples
 
         self.uniform_lambda = 0
         self.vib_beta = 0.00001

@@ -1,5 +1,6 @@
 import numpy as np
 import pymap3d as pm
+import torch
 
 def bounding_box_from_circle(lat_center, lon_center, radius = 1000,
     disable_latitude_compensation=False):

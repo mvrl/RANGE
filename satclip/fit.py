@@ -265,7 +265,7 @@ class SAPCLIP_PCME(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         pcme_loss, pcme_dict = self(batch, batch_idx)
-        self.log('pcme_val_loss', pcme_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+        self.log('val_loss', pcme_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
         self.log('val_kld_loss', pcme_dict['vib_loss'], batch_size=len(batch), prog_bar=True, sync_dist=True)
         return pcme_loss
 
@@ -315,11 +315,10 @@ if __name__ == '__main__':
     #initiallize the wandb logger
     wb_logger = WandbLogger(save_dir=args.log_dir,project=args.project_name, name=args.run_name,
      mode=args.wandb_mode)
-
     #initialize checkpoint monitor
     ckpt_monitors = ModelCheckpoint(monitor='val_loss', filename='{epoch}-{val_loss:.3f}',
              mode='min', save_top_k=10, save_last=True)
-    
+
     #initialize trainer
     if args.mode == 'dev': 
         print('Development Test Run')
@@ -349,9 +348,11 @@ if __name__ == '__main__':
     if args.loss_type=='pcme':
         sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
     anneal_T=args.anneal_T)
+
     else:
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
     anneal_T=args.anneal_T)
+
     print('SAPCLIP Model Initialized')
     # import code; code.interact(local=dict(globals(), **locals()))
     print('Starting Fit!!!!')
