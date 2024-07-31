@@ -218,7 +218,7 @@ class MCSoftContrastiveLoss(nn.Module):
 
         return prob.mean(axis=1)
 
-    def forward(self, image_features, caption_features, image_logsigma, caption_logsigma, **kwargs):
+    def forward(self, image_features, caption_features, image_logsigma, caption_logsigma, image_mu, caption_mu, **kwargs):
         uniform_loss = 0
         uniform_loss_val = 0
         vib_loss = 0
@@ -232,7 +232,7 @@ class MCSoftContrastiveLoss(nn.Module):
 
         if self.vib_beta != 0:
             vib_loss =\
-                self.kl_divergence(image_features.mean(dim=1), image_logsigma) + self.kl_divergence(caption_features.mean(dim=1), caption_logsigma)
+                self.kl_divergence(image_mu, image_logsigma) + self.kl_divergence(caption_mu, caption_logsigma)
             vib_loss_val = vib_loss.item()
 
         i2t_loss = self._compute_loss(sampled_image_features, sampled_caption_features)

@@ -296,6 +296,7 @@ def get_args():
 
     #model arguments
     parser.add_argument('--loss_type', type=str, default='probablistic')
+    parser.add_argument('--sampling_num', type=int, default=10)
     parser.add_argument('--anneal_T', type=int, default=370)
     parser.add_argument('--contrastive_wt', type=float, default=1.0)
     parser.add_argument('--embed_dim', type=int, default=256)
