@@ -7,8 +7,8 @@ import torch
 from .datamodules.s2geo_dataset import S2GeoDataModule
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.cli import LightningCLI
-from .loss import SatCLIPLoss
-from .model import SatCLIP
+from .loss_old import SatCLIPLoss
+from .model_old import SatCLIP
 
 torch.set_float32_matmul_precision('high')
 
