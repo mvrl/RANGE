@@ -251,3 +251,4 @@ class MCSoftContrastiveLoss(nn.Module):
                      'negative_scale': self.negative_scale.item(),
                      'loss': loss.item()}
         return loss, loss_dict
+
