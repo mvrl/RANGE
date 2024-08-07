@@ -12,8 +12,8 @@ import torchgeo.models
 from torchgeo.models import ResNet18_Weights, ResNet50_Weights, ViTSmall16_Weights
 
 from transformers import CLIPVisionModelWithProjection
+from rshf.satmae import SatMAE
 #local imports
-from .satmae import SatMAE
 from .location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
 from .datamodules.s2geo_dataset import S2Geo
 from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset, SAPCLIP_Dataset_H5
@@ -216,19 +216,21 @@ class SatCLIP_2(nn.Module):
         self.vision_layers = vision_layers
         self.device = device
         #define the vision encoder
-        
+
+        # SatMAE encoder        
         if vision_layers == 'SatMAE':
             print('Using Sat MAE')
-            pretrained_satmae_path = '/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/satmae_models/pretrain-vit-base-e199.pth'
-            self.visual = SatMAE(pretrained_models_path=pretrained_satmae_path, device=device, fc_dim=embed_dim)
+            self.visual = SatMAE(embed_dim=embed_dim, device=device)
             self.visual.requires_grad_(False)
-            self.visual.fc.requires_grad_(True)
-            #### need to add SatMAE
-        
+            for name,param in self.visual.named_parameters():
+                if 'projection_layer' in name:
+                    param.requires_grad=True
+            
+        # CLIP encoder
         elif vision_layers == 'CLIP':
             print('Using CLIP')
-            self.visual=Clip(device=device, vit_type='16')
-            self.visual.requires_grad_(False)
+            self.visual=Clip(embed_dim=embed_dim, device=device, vit_type='16')
+            self.visual.requires_grad_(False) 
             for name,param in self.visual.named_parameters():
                 if 'projection_layer' in name:
                     param.requires_grad=True
