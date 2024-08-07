@@ -411,7 +411,6 @@ class SatCLIP_2(nn.Module):
         #compute embeddings from both directions
         image_features = self.encode_image(image)     
         mu, logvar = self.encode_location(coords, hot_scale)
-        import code; code.interact(local=dict(globals(), **locals()))
         if self.loss_type=='pcme':
             pcme_loss, pcme_loss_dict = self.loss_prep(image_features, mu, logvar, scale)
             return (pcme_loss, pcme_loss_dict)
@@ -427,7 +426,6 @@ class SatCLIP_2(nn.Module):
             
             return contrastive_loss, kld_loss
 
-    
 
 def deterministic_sapclip(image_features, location_features, label):
     # normalized features
