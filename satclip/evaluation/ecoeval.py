@@ -119,3 +119,5 @@ if __name__ == '__main__':
 
         clf.fit(xtrain, ytrain)
         print(f'The satclip score is: {clf.score(xtest, ytest)}')
+
+        
