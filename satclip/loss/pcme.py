@@ -135,7 +135,7 @@ class MCSoftContrastiveLoss(nn.Module):
         self.num_samples = num_samples
 
         self.uniform_lambda = 0
-        self.vib_beta = 0.00001
+        self.vib_beta = 0.0000001
 
     def uniform_loss(self, x, max_samples=16384, t=2):
         if len(x) ** 2 > max_samples:
