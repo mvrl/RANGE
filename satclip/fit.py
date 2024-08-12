@@ -270,53 +270,57 @@ class SAPCLIP_PCME(L.LightningModule):
         return pcme_loss
     
     def on_validation_epoch_end(self):
-        # read the data
-        df_train = pd.read_csv('/scratch/a.dhakal/hyper_satclip/data/eval_data/ecoregion_train.csv')
-        df_test = pd.read_csv('/scratch/a.dhakal/hyper_satclip/data/eval_data/ecoregion_val.csv')
+       # only log every 3rd epoch
+        if self.current_epoch%3==0:
+             # read the data
+            df_train = pd.read_csv('/scratch/a.dhakal/hyper_satclip/data/eval_data/ecoregion_train.csv')
+            df_test = pd.read_csv('/scratch/a.dhakal/hyper_satclip/data/eval_data/ecoregion_val.csv')
 
-        df = pd.concat([df_train, df_test])
-        labels = pd.factorize(df['BIOME_NAME'])[0]
-        ytrain = labels[:len(df_train)]
-        ytest = labels[len(df_train):]
+            df = pd.concat([df_train, df_test])
+            labels = pd.factorize(df['BIOME_NAME'])[0]
+            ytrain = labels[:len(df_train)]
+            ytest = labels[len(df_train):]
 
-        coords = df[['X', 'Y']].values
-        coords = torch.from_numpy(coords).double()
-        loc = coords.to('cuda')
+            coords = df[['X', 'Y']].values
+            coords = torch.from_numpy(coords).double()
+            loc = coords.to('cuda')
 
-        #get the model
-        sapclip_encoder = self.model.eval()
-        
-        #compute embeddings at each scale
-        map_scale = {1:torch.tensor([1,0,0]), 3:torch.tensor([0,1,0]), 5:torch.tensor([0,0,1])}
-        scale_1 = map_scale[1]
-        scale_1 = repeat(scale_1, 'd -> b d', b=len(loc)).cuda()
-        scale_3 = map_scale[3]
-        scale_3 = repeat(scale_3, 'd -> b d', b=len(loc)).cuda()
-        scale_5 = map_scale[5]
-        scale_5 = repeat(scale_5, 'd -> b d', b=len(loc)).cuda() 
-        # generate sapclip embeddings
-        #instead of computing sapclip embeddings for individual scale, compute for all scales and average the embeddings
-        loc_embeddings = sapclip_encoder.encode_location(coords=loc, scale=scale_1)
-        loc_mu_1 = loc_embeddings[0].detach().cpu().numpy()
-        loc_sigma_1 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
-        loc_embeddings = sapclip_encoder.encode_location(coords=loc, scale=scale_3)
-        loc_mu_3 = loc_embeddings[0].detach().cpu().numpy()
-        loc_sigma_3 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
-        loc_embeddings = sapclip_encoder.encode_location(coords=loc, scale=scale_5)
-        loc_mu_5 = loc_embeddings[0].detach().cpu().numpy()
-        loc_sigma_5 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
+            #get the model
+            sapclip_encoder = self.model.eval()
+            
+            #compute embeddings at each scale
+            map_scale = {1:torch.tensor([1,0,0]), 3:torch.tensor([0,1,0]), 5:torch.tensor([0,0,1])}
+            scale_1 = map_scale[1]
+            scale_1 = repeat(scale_1, 'd -> b d', b=len(loc)).cuda()
+            scale_3 = map_scale[3]
+            scale_3 = repeat(scale_3, 'd -> b d', b=len(loc)).cuda()
+            scale_5 = map_scale[5]
+            scale_5 = repeat(scale_5, 'd -> b d', b=len(loc)).cuda() 
+            # generate sapclip embeddings
+            #instead of computing sapclip embeddings for individual scale, compute for all scales and average the embeddings
+            loc_embeddings = sapclip_encoder.encode_location(coords=loc, scale=scale_1)
+            loc_mu_1 = loc_embeddings[0].detach().cpu().numpy()
+            loc_sigma_1 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
+            loc_embeddings = sapclip_encoder.encode_location(coords=loc, scale=scale_3)
+            loc_mu_3 = loc_embeddings[0].detach().cpu().numpy()
+            loc_sigma_3 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
+            loc_embeddings = sapclip_encoder.encode_location(coords=loc, scale=scale_5)
+            loc_mu_5 = loc_embeddings[0].detach().cpu().numpy()
+            loc_sigma_5 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
 
-        loc_mu = (loc_mu_1 + loc_mu_3 + loc_mu_5)/3
-        xtrain_sapclip = loc_mu[:len(df_train)]
-        xtest_sapclip = loc_mu[len(df_train):]
-        scaler = MinMaxScaler()
-        xtrain_sapclip = scaler.fit_transform(xtrain_sapclip)
-        xtest_sapclip = scaler.transform(xtest_sapclip)
-        clf_sapclip = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
-        clf_sapclip.fit(xtrain_sapclip, ytrain)
+            loc_mu = (loc_mu_1 + loc_mu_3 + loc_mu_5)/3
+            xtrain_sapclip = loc_mu[:len(df_train)]
+            xtest_sapclip = loc_mu[len(df_train):]
+            scaler = MinMaxScaler()
+            xtrain_sapclip = scaler.fit_transform(xtrain_sapclip)
+            xtest_sapclip = scaler.transform(xtest_sapclip)
+            clf_sapclip = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
+            clf_sapclip.fit(xtrain_sapclip, ytrain)
 
-        acc = clf_sapclip.score(xtrain_sapclip, ytrain)
-        self.log('BIOME_ACC', acc, prog_bar=True, sync_dist=True)
+            acc = clf_sapclip.score(xtrain_sapclip, ytrain)
+            self.log('BIOME_ACC', acc, prog_bar=True, sync_dist=True)
+        else:
+            pass
 
 
 def get_args():
