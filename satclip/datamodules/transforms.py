@@ -133,6 +133,40 @@ def get_sapclip_transform(resize_crop_size=256):
         return dict(image=multi_images, point=point, scale=torch.tensor(scale), hot_scale=one_hot_scale)    
     return transform 
 
+#get a single crop for each sample irrespective of scale
+def get_sapclip_uni_transform(resize_crop_size=256):
+    augmentation = T.Compose([
+        T.RandomCrop(resize_crop_size),
+        T.RandomVerticalFlip(),
+        T.RandomHorizontalFlip(),
+        T.GaussianBlur(3),
+        T.ToTensor()
+    ])
+
+    map_scale = {1:torch.tensor([1,0,0]), 3:torch.tensor([0,1,0]), 5:torch.tensor([0,0,1])}
+
+    def transform(sample):
+        image = sample['image']
+        point = sample['point']
+        
+        # define the different scales
+        scale = np.random.choice([1, 3, 5])
+
+        #create the bounding box for the scale
+        crop_size = 256*scale
+
+        #center crop image for the given scale
+        big_image = T.CenterCrop(size=crop_size)(image)
+
+        #create crops for the given scale 
+        cropped_image = T.RandomCrop(256)(big_image)
+        cropped_image = augmentation(cropped_image)
+        #jitter the point
+        point = coordinate_jitter(point)
+        #one hot encode the scale
+        one_hot_scale = map_scale[scale]
+        return dict(image=cropped_image, point=point, scale=torch.tensor(scale), hot_scale=one_hot_scale)    
+    return transform 
 
 def coordinate_jitter(
         point,
