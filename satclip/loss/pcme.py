@@ -230,7 +230,12 @@ class MCSoftContrastiveLoss(nn.Module):
             uniform_loss_val = uniform_loss.item()
         sampled_image_features, sampled_caption_features = image_features, caption_features
 
+        
         if self.vib_beta != 0:
+            if image_mu=None and caption_mu=None:
+                vib_loss =\
+                self.kl_divergence(image_features.mean(dim=1), image_logsigma) + self.kl_divergence(caption_features.mean(dim=1), caption_logsigma)
+            else:
             vib_loss =\
                 self.kl_divergence(image_mu, image_logsigma) + self.kl_divergence(caption_mu, caption_logsigma)
             vib_loss_val = vib_loss.item()

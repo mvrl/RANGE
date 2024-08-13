@@ -391,6 +391,19 @@ class SatCLIP_2(nn.Module):
         pcme_loss, pcme_loss_dict = self.pcme_criterion(pruned_img_samples, loc_samples, img_logsigma, location_logsigma, img_mu, location_mu)
 
         return (pcme_loss, pcme_loss_dict)
+    
+        #loss when only single image is sampled for each loc irrespective scale
+        def pcme_uni_loss(self, image_features, location_mu, location_logsigma):
+            batch_size, dim = location_mu.shape
+            img_mu = self.img_fc_mu(image_features)
+            img_logsigma = self.img_fc_logsigma(image_features)
+            # generate samples from each distribution
+            img_samples = sample_gaussian_tensors(img_mu, img_logsigma, 8) # shape = [B, 10, D]
+            loc_samples = sample_gaussian_tensors(location_mu, location_logsigma, 8) # shape = [B, 10, D]
+
+            pcme_loss, pcme_loss_dict = self.pcme_criterion(img_samples, loc_samples, img_logsigma, location_logsigma, None, None)
+
+            return (pcme_loss, pcme_loss_dict)
 
     def encode_image(self, image): 
         return self.visual(image.type(self.dtype()))
