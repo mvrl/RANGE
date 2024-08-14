@@ -275,6 +275,13 @@ class SatCLIP_2(nn.Module):
             self.img_fc_logsigma = nn.Linear(embed_dim ,embed_dim)
             self.pcme_criterion = MCSoftContrastiveLoss()
         
+        elif loss_type=='pcme_uni':
+            print('Using pcme uni loss')
+            self.loss_prep= self.pcme_uni_loss
+            self.img_fc_mu = nn.Linear(embed_dim, embed_dim)
+            self.img_fc_logsigma = nn.Linear(embed_dim ,embed_dim)
+            self.pcme_criterion = MCSoftContrastiveLoss()
+        
         else:
             raise ValueError('Invalid Value for loss type')
 
@@ -392,18 +399,17 @@ class SatCLIP_2(nn.Module):
 
         return (pcme_loss, pcme_loss_dict)
     
-        #loss when only single image is sampled for each loc irrespective scale
-        def pcme_uni_loss(self, image_features, location_mu, location_logsigma):
-            batch_size, dim = location_mu.shape
-            img_mu = self.img_fc_mu(image_features)
-            img_logsigma = self.img_fc_logsigma(image_features)
-            # generate samples from each distribution
-            img_samples = sample_gaussian_tensors(img_mu, img_logsigma, 8) # shape = [B, 10, D]
-            loc_samples = sample_gaussian_tensors(location_mu, location_logsigma, 8) # shape = [B, 10, D]
+    #loss when only single image is sampled for each loc irrespective scale
+    def pcme_uni_loss(self, image_features, location_mu, location_logsigma, intervals):
+        batch_size, dim = location_mu.shape
+        img_mu = self.img_fc_mu(image_features)
+        img_logsigma = self.img_fc_logsigma(image_features)
+        # generate samples from each distribution
+        img_samples = sample_gaussian_tensors(img_mu, img_logsigma, 8) # shape = [B, 10, D]
+        loc_samples = sample_gaussian_tensors(location_mu, location_logsigma, 8) # shape = [B, 10, D]
 
-            pcme_loss, pcme_loss_dict = self.pcme_criterion(img_samples, loc_samples, img_logsigma, location_logsigma, None, None)
-
-            return (pcme_loss, pcme_loss_dict)
+        pcme_loss, pcme_loss_dict = self.pcme_criterion(img_samples, loc_samples, img_logsigma, location_logsigma, None, None)
+        return (pcme_loss, pcme_loss_dict)
 
     def encode_image(self, image): 
         return self.visual(image.type(self.dtype()))
@@ -419,6 +425,7 @@ class SatCLIP_2(nn.Module):
     def forward(self, batch):
         image = batch['image']
         coords = batch['point']
+        
         hot_scale = batch['hot_scale']
         scale = batch['scale']
         label = batch['label']
@@ -426,7 +433,7 @@ class SatCLIP_2(nn.Module):
         #compute embeddings from both directions
         image_features = self.encode_image(image)     
         mu, logvar = self.encode_location(coords, hot_scale)
-        if self.loss_type=='pcme':
+        if self.loss_type=='pcme' or self.loss_type=='pcme_uni':
             pcme_loss, pcme_loss_dict = self.loss_prep(image_features, mu, logvar, scale)
             return (pcme_loss, pcme_loss_dict)
         else:

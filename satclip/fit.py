@@ -349,6 +349,7 @@ def get_args():
     parser.add_argument('--wandb_resume', type=str, default='')
 
     #model arguments
+    parser.add_argument('--transform_type', type=str, default='sapclip')
     parser.add_argument('--loss_type', type=str, default='probablistic')
     parser.add_argument('--sampling_num', type=int, default=10)
     parser.add_argument('--anneal_T', type=int, default=370)
@@ -391,20 +392,20 @@ if __name__ == '__main__':
     
     #get dataloaders
     if args.dataset_type=='normal':
-        dataset = SAPCLIP_Dataset(root=args.data_root, transform_type='sapclip', crop_size=args.crop_size, prototype=False)
+        dataset = SAPCLIP_Dataset(root=args.data_root, transform_type=args.transform_type, crop_size=args.crop_size, prototype=False)
     elif args.dataset_type=='h5':
-        dataset = SAPCLIP_Dataset_H5(input_path=args.data_root, transform_type='sapclip', crop_size=args.crop_size)
+        dataset = SAPCLIP_Dataset_H5(input_path=args.data_root, transform_type=args.transform_type , crop_size=args.crop_size)
 
     train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=args.batch_size,
-     num_workers=args.num_workers)
+     num_workers=args.num_workers, transform_type=args.transform_type)
     print('DataLoaders Initialized')
-
     #initialize model
-    if args.loss_type=='pcme':
+    if args.loss_type=='pcme' or args.loss_type=='pcme_uni':
+        print('Using PCME type loss')
         sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
     anneal_T=args.anneal_T)
-
     else:
+        print('Using likelihood type loss')
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
     anneal_T=args.anneal_T)
 

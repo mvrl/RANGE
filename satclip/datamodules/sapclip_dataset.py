@@ -292,6 +292,7 @@ class SAPCLIP_Dataset(NonGeoDataset):
         bad_files = corrupt_files + missing_files
         self.root = root
         self.mode = mode
+        self.transform_type = transform_type
         # if not self._check_integrity():
         #     raise RuntimeError("Dataset not found or corrupted.")
 
@@ -469,7 +470,7 @@ class SAPCLIP_Dataset_H5(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     data_type='normal'
-    transform_type = 'sapclip'
+    transform_type = 'sapclip_uni'
     if data_type=='h5':
         print('H5')
         path = '/scratch/a.dhakal/hyper_satclip/data/h5_data/satclip_data.h5'
