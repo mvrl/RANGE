@@ -176,7 +176,7 @@ class SAPCLIP_PCME(L.LightningModule):
         anneal_T=1000
     ) -> None:
         super().__init__()
-
+        self.save_hyperparameters()
         self.model = SatCLIP_2(
             embed_dim=embed_dim,
             image_resolution=image_resolution,
@@ -382,12 +382,12 @@ if __name__ == '__main__':
         print('Development Test Run')
         trainer = L.Trainer(fast_dev_run=15, max_epochs=4, logger=wb_logger, strategy=args.strategy,
          num_sanity_val_steps=0, accelerator=args.accelerator, devices=args.devices, 
-        callbacks=[**ckpt_monitors, lr_logger])
+        callbacks=[*ckpt_monitors, lr_logger])
     elif args.mode == 'train':
         print('Training Run')
         trainer = L.Trainer(precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy=args.strategy, 
         num_sanity_val_steps=1, accelerator=args.accelerator, devices=args.devices, 
-        callbacks=[**ckpt_monitors, lr_logger], check_val_every_n_epoch=1, 
+        callbacks=[*ckpt_monitors, lr_logger], check_val_every_n_epoch=1, 
         log_every_n_steps=2, accumulate_grad_batches=args.accumulate_grad)
     else:
         raise ValueError('Invalid value for mode')

@@ -291,13 +291,13 @@ class SatCLIP_2(nn.Module):
         self.init_weights()
     
     def init_weights(self):
+        print('Initializing weights')
         r = np.sqrt(6.) / np.sqrt(self.fc_mu.in_features +
                                   self.fc_mu.out_features)
         self.fc_mu.weight.data.uniform_(-r, r)
         self.fc_mu.bias.data.fill_(-4)
         self.fc_logvar.weight.data.uniform_(-r, r)
         self.fc_logvar.bias.data.fill_(-4)
-
 
     def dtype(self):
         if isinstance(self.visual, timm.models.vision_transformer.VisionTransformer):
