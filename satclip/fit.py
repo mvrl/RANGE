@@ -372,20 +372,22 @@ if __name__ == '__main__':
     wb_logger = WandbLogger(save_dir=args.log_dir,project=args.project_name, name=args.run_name,
      mode=args.wandb_mode)
     #initialize checkpoint monitor
-    ckpt_monitors = ModelCheckpoint(monitor='val_loss', filename='{epoch}-{val_loss:.3f}',
-             mode='min', save_top_k=10, save_last=True)
+    ckpt_monitors = (ModelCheckpoint(monitor='val_loss', filename='{epoch}-{val_loss:.3f}',
+             mode='min', save_top_k=10, save_last=True),
+             ModelCheckpoint(monitor='BIOME_ACC', filename='{epoch}-{biome_acc:.3f}',
+             mode='max', save_top_k=10, save_last=True))
 
     #initialize trainer
     if args.mode == 'dev': 
         print('Development Test Run')
         trainer = L.Trainer(fast_dev_run=15, max_epochs=4, logger=wb_logger, strategy=args.strategy,
          num_sanity_val_steps=0, accelerator=args.accelerator, devices=args.devices, 
-        callbacks=[ckpt_monitors, lr_logger])
+        callbacks=[**ckpt_monitors, lr_logger])
     elif args.mode == 'train':
         print('Training Run')
         trainer = L.Trainer(precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy=args.strategy, 
         num_sanity_val_steps=1, accelerator=args.accelerator, devices=args.devices, 
-        callbacks=[ckpt_monitors, lr_logger], check_val_every_n_epoch=1, 
+        callbacks=[**ckpt_monitors, lr_logger], check_val_every_n_epoch=1, 
         log_every_n_steps=2, accumulate_grad_batches=args.accumulate_grad)
     else:
         raise ValueError('Invalid value for mode')
