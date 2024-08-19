@@ -258,8 +258,11 @@ class SatCLIP_2(nn.Module):
 
         #define the scale encoder
         self.scale_encoder = nn.Linear(3, embed_dim).double()
-        self.fc_mu = nn.Linear(2*embed_dim, embed_dim).double()
-        self.fc_logvar = nn.Linear(2*embed_dim, embed_dim).double()
+        self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
+        self.fc_logvar = nn.Linear(embed_dim, embed_dim).double()
+        #set the bias and init of the layers
+        self.fc_mu.bias.data.fill_(-4)
+        self.fc_logvar.bias.data.fill_(-4)
 
         #select the appropriate function deterministic vs probablistic that prepares
         #the embeddings for the appropriate loss
@@ -284,6 +287,16 @@ class SatCLIP_2(nn.Module):
         
         else:
             raise ValueError('Invalid Value for loss type')
+        
+        self.init_weights()
+    
+    def init_weights(self):
+        r = np.sqrt(6.) / np.sqrt(self.fc_mu.in_features +
+                                  self.fc_mu.out_features)
+        self.fc_mu.weight.data.uniform_(-r, r)
+        self.fc_mu.bias.data.fill_(-4)
+        self.fc_logvar.weight.data.uniform_(-r, r)
+        self.fc_logvar.bias.data.fill_(-4)
 
 
     def dtype(self):
@@ -417,7 +430,8 @@ class SatCLIP_2(nn.Module):
     def encode_location(self, coords, scale):
         location_features = nn.functional.leaky_relu(self.location(coords.double()))
         scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
-        scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
+        scaled_loc_features = location_features+scale_features
+        # scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
         scaled_loc_mu = self.fc_mu(scaled_loc_features).float()
         scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
         return [scaled_loc_mu, scaled_loc_logvar]
