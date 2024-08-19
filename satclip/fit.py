@@ -16,6 +16,7 @@ from einops import repeat
 from sklearn.linear_model import RidgeClassifierCV
 import pandas as pd
 import numpy as np
+from rtdl_num_embeddings import PiecewiseLinearEncoding
 
 #local imports 
 from .model import SatCLIP_2
@@ -173,7 +174,8 @@ class SAPCLIP_PCME(L.LightningModule):
         num_hidden_layers=2,
         capacity=256,        
         loss_type='pcme',
-        anneal_T=1000
+        anneal_T=1000,
+        scale_bins=50
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
@@ -196,6 +198,7 @@ class SAPCLIP_PCME(L.LightningModule):
             capacity=capacity,
             device='cuda',
             loss_type=loss_type,
+            scale_bins=scale_bins,
         )
         
         self.learning_rate = learning_rate
@@ -203,6 +206,13 @@ class SAPCLIP_PCME(L.LightningModule):
         self.anneal_T = anneal_T
         self.delta_beta = 2/self.anneal_T
         self.kld_wt=0
+        bins =  [torch.from_numpy(np.linspace(0,6,scale_bins+1)).double()]
+        self.PLE = PiecewiseLinearEncoding(bins)
+        import code; code.interact(local=dict(globals(), **locals()))
+        scale_1_encoding = self.PLE(torch.tensor([1]))
+        scale_3_encoding = self.PLE(torch.tensor([3]))
+        scale_5_encoding = self.PLE(torch.tensor([5]))
+        self.map_scale = {1:scale_1_encoding, 3:scale_3_encoding, 5:scale_5_encoding}
         self.save_hyperparameters()
 
     def anneal_beta(self):
@@ -289,12 +299,12 @@ class SAPCLIP_PCME(L.LightningModule):
             sapclip_encoder = self.model.eval()
             
             #compute embeddings at each scale
-            map_scale = {1:torch.tensor([1,0,0]), 3:torch.tensor([0,1,0]), 5:torch.tensor([0,0,1])}
-            scale_1 = map_scale[1]
+            
+            scale_1 = self.map_scale[1]
             scale_1 = repeat(scale_1, 'd -> b d', b=len(loc)).cuda()
-            scale_3 = map_scale[3]
+            scale_3 = self.map_scale[3]
             scale_3 = repeat(scale_3, 'd -> b d', b=len(loc)).cuda()
-            scale_5 = map_scale[5]
+            scale_5 = self.map_scale[5]
             scale_5 = repeat(scale_5, 'd -> b d', b=len(loc)).cuda() 
             # generate sapclip embeddings
             #instead of computing sapclip embeddings for individual scale, compute for all scales and average the embeddings
@@ -349,6 +359,7 @@ def get_args():
     parser.add_argument('--wandb_resume', type=str, default='')
 
     #model arguments
+    parser.add_argument('--scale_bins', type=int, default=50)
     parser.add_argument('--transform_type', type=str, default='sapclip')
     parser.add_argument('--loss_type', type=str, default='probablistic')
     parser.add_argument('--sampling_num', type=int, default=10)
@@ -394,7 +405,7 @@ if __name__ == '__main__':
     
     #get dataloaders
     if args.dataset_type=='normal':
-        dataset = SAPCLIP_Dataset(root=args.data_root, transform_type=args.transform_type, crop_size=args.crop_size, prototype=False)
+        dataset = SAPCLIP_Dataset(root=args.data_root, transform_type=args.transform_type, crop_size=args.crop_size, prototype=False, scale_bins=args.scale_bins)
     elif args.dataset_type=='h5':
         dataset = SAPCLIP_Dataset_H5(input_path=args.data_root, transform_type=args.transform_type , crop_size=args.crop_size)
 
@@ -405,7 +416,7 @@ if __name__ == '__main__':
     if args.loss_type=='pcme' or args.loss_type=='pcme_uni':
         print('Using PCME type loss')
         sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
-    anneal_T=args.anneal_T)
+    anneal_T=args.anneal_T, scale_bins=args.scale_bins)
     else:
         print('Using likelihood type loss')
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,

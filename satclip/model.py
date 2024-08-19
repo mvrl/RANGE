@@ -208,6 +208,7 @@ class SatCLIP_2(nn.Module):
                  capacity: int=256,
                  device: str='cuda',
                  loss_type: str='probablistic',
+                 scale_bins: int=50,
                  *args,
                  **kwargs
                  ):
@@ -257,7 +258,9 @@ class SatCLIP_2(nn.Module):
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07)).to(self.device)
 
         #define the scale encoder
-        self.scale_encoder = nn.Linear(3, embed_dim).double()
+        self.scale_encoder = nn.Sequential(nn.Linear(scale_bins, embed_dim).double(),
+                                           nn.LeakyReLU(0.1).double(),
+                                           nn.Linear(embed_dim, embed_dim).double())
         self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
         self.fc_logvar = nn.Linear(embed_dim, embed_dim).double()
         #set the bias and init of the layers
@@ -443,7 +446,6 @@ class SatCLIP_2(nn.Module):
         hot_scale = batch['hot_scale']
         scale = batch['scale']
         label = batch['label']
-
         #compute embeddings from both directions
         image_features = self.encode_image(image)     
         mu, logvar = self.encode_location(coords, hot_scale)
@@ -503,7 +505,7 @@ def convert_weights(model: nn.Module):
     model.apply(_convert_weights_to_fp16)
 
 if __name__ == '__main__':
-    data_root = '/home/a.dhakal/active/proj_smart/satclip_sentinel/images'
+    data_root = '/scratch/a.dhakal/hyper_satclip/data/satclip_data/satclip_sentinel/images'
     embed_dim=512
     image_resolution=256
     vision_layers='CLIP'
@@ -543,13 +545,12 @@ if __name__ == '__main__':
             device='cuda'
         )
 
-    dataset = SAPCLIP_Dataset(root=data_root, transform_type='sapclip', crop_size=224, prototype=False)
-    train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=8,
+    dataset = SAPCLIP_Dataset(root=data_root, transform_type='sapclip_uni', crop_size=224, prototype=False,scale_bins=50)
+    train_loader, val_loader = get_split_dataset(dataset,transform_type='sapclip_uni', val_split=0.05, batch_size=8,
      num_workers=0)
     
     batch = next(iter(train_loader))
     visual_model = model.visual
-    # import code; code.interact(local=dict(globals(), **locals()))
     
     output = model(batch)
     

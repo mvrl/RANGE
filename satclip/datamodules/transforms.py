@@ -3,6 +3,7 @@ import torch
 import albumentations as A
 from albumentations.core.transforms_interface import ImageOnlyTransform  
 from albumentations.pytorch import ToTensorV2
+from rtdl_num_embeddings import PiecewiseLinearEncoding
 import numpy as np
 
 
@@ -134,7 +135,7 @@ def get_sapclip_transform(resize_crop_size=256):
     return transform 
 
 #get a single crop for each sample irrespective of scale
-def get_sapclip_uni_transform(resize_crop_size=256):
+def get_sapclip_uni_transform(resize_crop_size=256, scale_bins=50):
     augmentation = T.Compose([
         T.RandomCrop(resize_crop_size),
         T.RandomVerticalFlip(),
@@ -144,6 +145,8 @@ def get_sapclip_uni_transform(resize_crop_size=256):
     ])
 
     map_scale = {1:torch.tensor([1,0,0]), 3:torch.tensor([0,1,0]), 5:torch.tensor([0,0,1])}
+    bins =  [torch.from_numpy(np.linspace(0,6,scale_bins+1)).double()]
+    PLE = PiecewiseLinearEncoding(bins)
 
     def transform(sample):
         image = sample['image']
@@ -163,7 +166,7 @@ def get_sapclip_uni_transform(resize_crop_size=256):
         #jitter the point
         point = coordinate_jitter(point)
         #one hot encode the scale
-        one_hot_scale = map_scale[scale]
+        one_hot_scale = PLE(torch.tensor([scale]))
         return dict(image=cropped_image, point=point, scale=torch.tensor(scale), hot_scale=one_hot_scale, label=torch.zeros(3))    
     return transform 
 
