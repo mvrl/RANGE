@@ -423,7 +423,6 @@ class SatCLIP_2(nn.Module):
         # scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
         scaled_loc_mu = self.fc_mu(scaled_loc_features).float()
         scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
-        import code; code.interact(local=dict(globals(), **locals()))
         return [scaled_loc_mu, scaled_loc_logvar]
 
     def forward(self, batch):
