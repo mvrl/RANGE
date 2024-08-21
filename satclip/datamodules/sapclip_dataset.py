@@ -97,7 +97,8 @@ class SAPCLIP_Dataset(NonGeoDataset):
         crop_size: int = 256, 
         mode: Optional[str] = "both",
         prototype: bool=False,
-        scale_bins=50
+        scale_encoding: str='onehot',
+        scale_bins=3
     ) -> None:
         """Initialize a new S2-100K dataset instance.
         Args:
@@ -335,7 +336,7 @@ class SAPCLIP_Dataset(NonGeoDataset):
         elif transform_type=='sapclip':
             self.transform = get_sapclip_transform(resize_crop_size=crop_size)
         elif transform_type=='sapclip_uni':
-            self.transform = get_sapclip_uni_transform(resize_crop_size=crop_size, scale_bins=scale_bins)
+            self.transform = get_sapclip_uni_transform(resize_crop_size=crop_size, scale_encoding=scale_encoding, scale_bins=scale_bins)
         else:
             print('No transform used')
             self.transform=None
@@ -479,7 +480,7 @@ if __name__ == '__main__':
     elif data_type=='normal':
         print('Normal')
         path = '/scratch/a.dhakal/hyper_satclip/data/satclip_data/satclip_sentinel/images'
-        dataset = SAPCLIP_Dataset(root=path, transform_type=transform_type, crop_size=224, prototype=False, scale_bins=50)
+        dataset = SAPCLIP_Dataset(root=path, transform_type=transform_type, crop_size=224, prototype=False, scale_encoding='onehot', scale_bins=50)
     
     train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=16,
      num_workers=0, transform_type=transform_type)

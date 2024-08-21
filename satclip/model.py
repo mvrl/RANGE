@@ -208,7 +208,8 @@ class SatCLIP_2(nn.Module):
                  capacity: int=256,
                  device: str='cuda',
                  loss_type: str='probablistic',
-                 scale_bins: int=50,
+                 scale_encoding: str='onehot',
+                 scale_bins: int=3,
                  *args,
                  **kwargs
                  ):
@@ -216,6 +217,7 @@ class SatCLIP_2(nn.Module):
 
         self.vision_layers = vision_layers
         self.device = device
+        self.scale_encoding = scale_encoding
         #define the vision encoder
 
         # SatMAE encoder        
@@ -261,11 +263,13 @@ class SatCLIP_2(nn.Module):
         self.scale_encoder = nn.Sequential(nn.Linear(scale_bins, embed_dim).double(),
                                            nn.LeakyReLU(0.1).double(),
                                            nn.Linear(embed_dim, embed_dim).double())
+        #define nn embeddings is scale encoding in learnable
+        if self.scale_encoding=='learnable':
+            self.learnable_scale_embeddings = nn.Embedding(3,scale_bins).to(self.device)
+        
+        #define the distribution learners
         self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
         self.fc_logvar = nn.Linear(embed_dim, embed_dim).double()
-        #set the bias and init of the layers
-        self.fc_mu.bias.data.fill_(-4)
-        self.fc_logvar.bias.data.fill_(-4)
 
         #select the appropriate function deterministic vs probablistic that prepares
         #the embeddings for the appropriate loss
@@ -291,6 +295,7 @@ class SatCLIP_2(nn.Module):
         else:
             raise ValueError('Invalid Value for loss type')
         
+        #initilize weights
         self.init_weights()
     
     def init_weights(self):
@@ -373,27 +378,6 @@ class SatCLIP_2(nn.Module):
     def pcme_loss(self, image_features, location_mu, location_logsigma, intervals):
         batch_size, dim = location_mu.shape
         
-        ######### old code for pcme by averaging the embeddings before computing distributions ##########
-        #compute the mean of images from the same sample
-        # image_features_mean = torch.zeros_like(location_mu)
-        # start=0 
-        # for i,inter in enumerate(intervals):
-        #     image_features_mean[i] = torch.mean(image_features[start:start+inter], dim=0)
-        #     start = start+inter
-
-        # #compute logvar and mu for image features
-        # img_mu = self.img_fc_mu(image_features_mean)
-        # img_logsigma = self.img_fc_logsigma(image_features_mean)
-
-        # #sample features from distribution
-        # img_samples = sample_gaussian_tensors(img_mu, img_logsigma, 5)
-        # loc_samples = sample_gaussian_tensors(location_mu, location_logsigma, 5)
-
-        # pcme_loss, pcme_loss_dict = self.pcme_criterion(img_samples, loc_samples, img_logsigma, location_logsigma)
-        
-        ###### new pcme: generate distributions first for individual crops and then average ###########
-        # get the mean and logsigma for each crop
-        # import code; code.interact(local=dict(globals(), **locals()))
         batch_size, dim = location_mu.shape
         img_mu = self.img_fc_mu(image_features)
         img_logsigma = self.img_fc_logsigma(image_features)
@@ -431,12 +415,15 @@ class SatCLIP_2(nn.Module):
         return self.visual(image.type(self.dtype()))
 
     def encode_location(self, coords, scale):
+        if self.scale_encoding=='learnable':
+            scale = self.learnable_scale_embeddings(scale)
         location_features = nn.functional.leaky_relu(self.location(coords.double()))
         scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
         scaled_loc_features = location_features+scale_features
         # scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
         scaled_loc_mu = self.fc_mu(scaled_loc_features).float()
         scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
+        import code; code.interact(local=dict(globals(), **locals()))
         return [scaled_loc_mu, scaled_loc_logvar]
 
     def forward(self, batch):
@@ -446,6 +433,7 @@ class SatCLIP_2(nn.Module):
         hot_scale = batch['hot_scale']
         scale = batch['scale']
         label = batch['label']
+
         #compute embeddings from both directions
         image_features = self.encode_image(image)     
         mu, logvar = self.encode_location(coords, hot_scale)

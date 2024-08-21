@@ -175,7 +175,8 @@ class SAPCLIP_PCME(L.LightningModule):
         capacity=256,        
         loss_type='pcme',
         anneal_T=1000,
-        scale_bins=50
+        scale_encoding='onehot',
+        scale_bins=3
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
@@ -198,6 +199,7 @@ class SAPCLIP_PCME(L.LightningModule):
             capacity=capacity,
             device='cuda',
             loss_type=loss_type,
+            scale_encoding=scale_encoding,
             scale_bins=scale_bins,
         )
         
@@ -208,7 +210,6 @@ class SAPCLIP_PCME(L.LightningModule):
         self.kld_wt=0
         bins =  [torch.from_numpy(np.linspace(0,6,scale_bins+1)).double()]
         self.PLE = PiecewiseLinearEncoding(bins)
-        import code; code.interact(local=dict(globals(), **locals()))
         scale_1_encoding = self.PLE(torch.tensor([1]))
         scale_3_encoding = self.PLE(torch.tensor([3]))
         scale_5_encoding = self.PLE(torch.tensor([5]))
@@ -359,6 +360,7 @@ def get_args():
     parser.add_argument('--wandb_resume', type=str, default='')
 
     #model arguments
+    parser.add_argument('--scale_encoding', type=str, default='onehot', choices=['onehot', 'ple', 'learnable'])
     parser.add_argument('--scale_bins', type=int, default=50)
     parser.add_argument('--transform_type', type=str, default='sapclip')
     parser.add_argument('--loss_type', type=str, default='probablistic')
@@ -405,7 +407,7 @@ if __name__ == '__main__':
     
     #get dataloaders
     if args.dataset_type=='normal':
-        dataset = SAPCLIP_Dataset(root=args.data_root, transform_type=args.transform_type, crop_size=args.crop_size, prototype=False, scale_bins=args.scale_bins)
+        dataset = SAPCLIP_Dataset(root=args.data_root, transform_type=args.transform_type, crop_size=args.crop_size, prototype=False, scale_encoding=args.scale_encoding, scale_bins=args.scale_bins)
     elif args.dataset_type=='h5':
         dataset = SAPCLIP_Dataset_H5(input_path=args.data_root, transform_type=args.transform_type , crop_size=args.crop_size)
 
@@ -416,7 +418,7 @@ if __name__ == '__main__':
     if args.loss_type=='pcme' or args.loss_type=='pcme_uni':
         print('Using PCME type loss')
         sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
-    anneal_T=args.anneal_T, scale_bins=args.scale_bins)
+    anneal_T=args.anneal_T, scale_encoding=args.scale_encoding, scale_bins=args.scale_bins)
     else:
         print('Using likelihood type loss')
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
