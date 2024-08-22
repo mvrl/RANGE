@@ -213,7 +213,7 @@ class SAPCLIP_PCME(L.LightningModule):
         scale_1_encoding = self.PLE(torch.tensor([1]))
         scale_3_encoding = self.PLE(torch.tensor([3]))
         scale_5_encoding = self.PLE(torch.tensor([5]))
-        self.map_scale = {1:scale_1_encoding, 3:scale_3_encoding, 5:scale_5_encoding}
+        
         self.save_hyperparameters()
 
     def anneal_beta(self):
@@ -300,22 +300,24 @@ class SAPCLIP_PCME(L.LightningModule):
             sapclip_encoder = self.model.eval()
             
             #compute embeddings at each scale
-            
+            self.map_scale = {1:torch.tensor(0).cuda(),
+             3:torch.tensor(1).cuda(), 
+             5:torch.tensor(2).cuda()}
             scale_1 = self.map_scale[1]
-            scale_1 = repeat(scale_1, 'd -> b d', b=len(loc)).cuda()
+            scale_1 = scale_1.repeat(len(loc)) #scale_1 = repeat(scale_1, 'd -> b d', b=len(loc)).cuda()
             scale_3 = self.map_scale[3]
-            scale_3 = repeat(scale_3, 'd -> b d', b=len(loc)).cuda()
+            scale_3 = scale_3.repeat(len(loc)) #scale_3 = repeat(scale_3, 'd -> b d', b=len(loc)).cuda()
             scale_5 = self.map_scale[5]
-            scale_5 = repeat(scale_5, 'd -> b d', b=len(loc)).cuda() 
+            scale_5 = scale_5.repeat(len(loc)) #scale_5 = repeat(scale_5, 'd -> b d', b=len(loc)).cuda() 
             # generate sapclip embeddings
             #instead of computing sapclip embeddings for individual scale, compute for all scales and average the embeddings
-            loc_embeddings = sapclip_encoder.encode_location(coords=loc, scale=scale_1)
+            loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_1)
             loc_mu_1 = loc_embeddings[0].detach().cpu().numpy()
             loc_sigma_1 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
-            loc_embeddings = sapclip_encoder.encode_location(coords=loc, scale=scale_3)
+            loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_3)
             loc_mu_3 = loc_embeddings[0].detach().cpu().numpy()
             loc_sigma_3 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
-            loc_embeddings = sapclip_encoder.encode_location(coords=loc, scale=scale_5)
+            loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_5)
             loc_mu_5 = loc_embeddings[0].detach().cpu().numpy()
             loc_sigma_5 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
 
@@ -358,6 +360,8 @@ def get_args():
     parser.add_argument('--run_name', type=str, default='dev')
     parser.add_argument('--wandb_mode', type=str, default='disabled')
     parser.add_argument('--wandb_resume', type=str, default='')
+    parser.add_argument('--wandb_notes', type=str, default='Description of the model here')
+
 
     #model arguments
     parser.add_argument('--scale_encoding', type=str, default='onehot', choices=['onehot', 'ple', 'learnable'])
@@ -383,7 +387,7 @@ if __name__ == '__main__':
 
     #initiallize the wandb logger
     wb_logger = WandbLogger(save_dir=args.log_dir,project=args.project_name, name=args.run_name,
-     mode=args.wandb_mode)
+     mode=args.wandb_mode, notes=args.wandb_notes)
     #initialize checkpoint monitor
     ckpt_monitors = (ModelCheckpoint(monitor='val_loss', filename='{epoch}-{val_loss:.3f}',
              mode='min', save_top_k=10, save_last=True),
@@ -401,7 +405,7 @@ if __name__ == '__main__':
         trainer = L.Trainer(precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy=args.strategy, 
         num_sanity_val_steps=1, accelerator=args.accelerator, devices=args.devices, 
         callbacks=[*ckpt_monitors, lr_logger], check_val_every_n_epoch=1, 
-        log_every_n_steps=2, accumulate_grad_batches=args.accumulate_grad)
+        log_every_n_steps=1, accumulate_grad_batches=args.accumulate_grad)
     else:
         raise ValueError('Invalid value for mode')
     

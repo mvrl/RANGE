@@ -414,9 +414,11 @@ class SatCLIP_2(nn.Module):
     def encode_image(self, image): 
         return self.visual(image.type(self.dtype()))
 
-    def encode_location(self, coords, scale):
+    def encode_location(self, coords, hot_scale):
         if self.scale_encoding=='learnable':
-            scale = self.learnable_scale_embeddings(scale)
+            scale = self.learnable_scale_embeddings(hot_scale)
+        else:
+            scale = hot_scale
         location_features = nn.functional.leaky_relu(self.location(coords.double()))
         scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
         scaled_loc_features = location_features+scale_features
@@ -434,7 +436,8 @@ class SatCLIP_2(nn.Module):
         label = batch['label']
 
         #compute embeddings from both directions
-        image_features = self.encode_image(image)     
+        image_features = self.encode_image(image)
+   
         mu, logvar = self.encode_location(coords, hot_scale)
         if self.loss_type=='pcme' or self.loss_type=='pcme_uni':
             pcme_loss, pcme_loss_dict = self.loss_prep(image_features, mu, logvar, scale)
