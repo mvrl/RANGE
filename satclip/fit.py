@@ -422,7 +422,8 @@ if __name__ == '__main__':
     if args.loss_type=='pcme' or args.loss_type=='pcme_uni':
         print('Using PCME type loss')
         sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
-    anneal_T=args.anneal_T, scale_encoding=args.scale_encoding, scale_bins=args.scale_bins)
+    vision_layers=args.vision_encoder, anneal_T=args.anneal_T,
+    scale_encoding=args.scale_encoding, scale_bins=args.scale_bins)
     else:
         print('Using likelihood type loss')
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
