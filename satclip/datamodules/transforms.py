@@ -144,7 +144,7 @@ def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scal
         T.GaussianBlur(3),
         T.ToTensor()
     ])
-
+    
     if scale_encoding == 'onehot':
         map_scale = {1:torch.tensor([1,0,0]), 3:torch.tensor([0,1,0]), 5:torch.tensor([0,0,1])}
     elif scale_encoding == 'ple':
@@ -162,7 +162,7 @@ def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scal
         image = sample['image']
         point = sample['point']
         # define the different scales
-        scale = np.random.choice([1, 3, 5])
+        scale = np.random.choice([1, 3, 5], p=[0.5,0.3,0.2])
 
         #create the bounding box for the scale
         crop_size = 256*scale
