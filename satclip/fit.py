@@ -202,7 +202,7 @@ class SAPCLIP_PCME(L.LightningModule):
             scale_encoding=scale_encoding,
             scale_bins=scale_bins,
         )
-        
+        self.scale_encoding = scale_encoding
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.anneal_T = anneal_T
@@ -284,8 +284,8 @@ class SAPCLIP_PCME(L.LightningModule):
        # only log every 3rd epoch
         if self.current_epoch%3==0:
              # read the data
-            df_train = pd.read_csv('/scratch/a.dhakal/hyper_satclip/data/eval_data/ecoregion_train.csv')
-            df_test = pd.read_csv('/scratch/a.dhakal/hyper_satclip/data/eval_data/ecoregion_val.csv')
+            df_train = pd.read_csv('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/ecoregion_train.csv')
+            df_test = pd.read_csv('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/ecoregion_val.csv')
 
             df = pd.concat([df_train, df_test])
             labels = pd.factorize(df['BIOME_NAME'])[0]
@@ -300,15 +300,25 @@ class SAPCLIP_PCME(L.LightningModule):
             sapclip_encoder = self.model.eval()
             
             #compute embeddings at each scale
-            self.map_scale = {1:torch.tensor(0).cuda(),
-             3:torch.tensor(1).cuda(), 
-             5:torch.tensor(2).cuda()}
-            scale_1 = self.map_scale[1]
-            scale_1 = scale_1.repeat(len(loc)) #scale_1 = repeat(scale_1, 'd -> b d', b=len(loc)).cuda()
-            scale_3 = self.map_scale[3]
-            scale_3 = scale_3.repeat(len(loc)) #scale_3 = repeat(scale_3, 'd -> b d', b=len(loc)).cuda()
-            scale_5 = self.map_scale[5]
-            scale_5 = scale_5.repeat(len(loc)) #scale_5 = repeat(scale_5, 'd -> b d', b=len(loc)).cuda() 
+            if self.scale_encoding=='learnable':
+                self.map_scale = {1:torch.tensor(0).cuda(),
+                3:torch.tensor(1).cuda(), 
+                5:torch.tensor(2).cuda()}
+                scale_1 = self.map_scale[1]
+                scale_1 = scale_1.repeat(len(loc)) #scale_1 = repeat(scale_1, 'd -> b d', b=len(loc)).cuda()
+                scale_3 = self.map_scale[3]
+                scale_3 = scale_3.repeat(len(loc)) #scale_3 = repeat(scale_3, 'd -> b d', b=len(loc)).cuda()
+                scale_5 = self.map_scale[5]
+                scale_5 = scale_5.repeat(len(loc)) #scale_5 = repeat(scale_5, 'd -> b d', b=len(loc)).cuda() 
+            elif self.scale_encoding=='onehot':
+                self.map_scale = {1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+                scale_1 = self.map_scale[1]
+                scale_1 = repeat(scale_1, 'd -> b d', b=len(loc)).cuda()
+                scale_3 = self.map_scale[3]
+                scale_3 = repeat(scale_3, 'd -> b d', b=len(loc)).cuda()
+                scale_5 = self.map_scale[5]
+                scale_5 = repeat(scale_5, 'd -> b d', b=len(loc)).cuda()
+
             # generate sapclip embeddings
             #instead of computing sapclip embeddings for individual scale, compute for all scales and average the embeddings
             loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_1)
