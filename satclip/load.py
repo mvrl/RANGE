@@ -1,4 +1,4 @@
-from main import *
+from .main_old import *
 
 def get_satclip(ckpt_path, device, return_all=False):
     ckpt = torch.load(ckpt_path,map_location=device)
@@ -16,3 +16,5 @@ def get_satclip(ckpt_path, device, return_all=False):
         return geo_model.eval
     else:
         return geo_model.location
+    
+import code; code.interact(local=dict(globals(), **locals()))

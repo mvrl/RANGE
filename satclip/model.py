@@ -10,9 +10,12 @@ import math
 import timm
 import torchgeo.models
 from torchgeo.models import ResNet18_Weights, ResNet50_Weights, ViTSmall16_Weights
+from huggingface_hub import hf_hub_download
+
 
 from transformers import CLIPVisionModelWithProjection
 from rshf.satmae import SatMAE
+
 #local imports
 from .location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
 from .datamodules.s2geo_dataset import S2Geo
@@ -20,7 +23,7 @@ from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset, SAP
 from .vision_models.clip import Clip
 from .loss.pcme import MCSoftContrastiveLoss
 from .utils.utils import sample_gaussian_tensors
-
+from .load import get_satclip
 
 
 
@@ -125,14 +128,23 @@ class SatCLIP(nn.Module):
                 in_channels=in_channels
             )
         
-        self.posenc = get_positional_encoding(name=le_type, harmonics_calculation=harmonics_calculation, legendre_polys=legendre_polys, min_radius=min_radius, max_radius=max_radius, frequency_num=frequency_num).double()
-        self.nnet = get_neural_network(name=pe_type, input_dim=self.posenc.embedding_dim, num_classes=embed_dim, dim_hidden=capacity, num_layers=num_hidden_layers).double()
-        self.location = LocationEncoder(self.posenc, 
-                                        self.nnet
-        ).double()
+        satclip_pretrained = kwargs.get('satclip_pretrained')
+        if not satclip_pretrained:        
+            print('Initializing new SatCLIP')
+            self.posenc = get_positional_encoding(name=le_type, harmonics_calculation=harmonics_calculation, legendre_polys=legendre_polys, min_radius=min_radius, max_radius=max_radius, frequency_num=frequency_num).double()
+            self.nnet = get_neural_network(name=pe_type, input_dim=self.posenc.embedding_dim, num_classes=embed_dim, dim_hidden=capacity, num_layers=num_hidden_layers).double()
+            self.location = LocationEncoder(self.posenc, 
+                                            self.nnet
+            ).double()
+        else:
+            print('Loading pretrained SatCLIP')
+            self.location = get_satclip(
+                    hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
+                device=device).double()
+            self.posenc = self.location.posenc.double()
+            self.nnet = self.location.nnet.double()
         
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-
         self.initialize_parameters()
 
     def initialize_parameters(self):
@@ -250,13 +262,24 @@ class SatCLIP_2(nn.Module):
                 in_channels=in_channels
             )
         
-        #define the position encoder
-        self.posenc = get_positional_encoding(name=le_type, harmonics_calculation=harmonics_calculation, legendre_polys=legendre_polys, min_radius=min_radius, max_radius=max_radius, frequency_num=frequency_num).double()
-        self.nnet = get_neural_network(name=pe_type, input_dim=self.posenc.embedding_dim, num_classes=embed_dim, dim_hidden=capacity, num_layers=num_hidden_layers).double()
-        self.location = LocationEncoder(self.posenc, 
-                                        self.nnet
-        ).double()
+        #define the satclip location encoder
+        satclip_pretrained = kwargs.get('satclip_pretrained')
+        if not satclip_pretrained:        
+            print('Initializing new SatCLIP')
+            self.posenc = get_positional_encoding(name=le_type, harmonics_calculation=harmonics_calculation, legendre_polys=legendre_polys, min_radius=min_radius, max_radius=max_radius, frequency_num=frequency_num).double()
+            self.nnet = get_neural_network(name=pe_type, input_dim=self.posenc.embedding_dim, num_classes=embed_dim, dim_hidden=capacity, num_layers=num_hidden_layers).double()
+            self.location = LocationEncoder(self.posenc, 
+                                            self.nnet
+            ).double()
+        else:
+            print('Loading pretrained SatCLIP')
+            self.location = get_satclip(
+                    hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
+                device=device).double()
+            self.posenc = self.location.posenc.double()
+            self.nnet = self.location.nnet.double()
         
+        #initialize the logit scale
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07)).to(self.device)
 
         #define the scale encoder
@@ -535,7 +558,8 @@ if __name__ == '__main__':
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
             loss_type='probablistic',       
-            device='cuda'
+            device='cuda',
+
         )
 
     dataset = SAPCLIP_Dataset(root=data_root, transform_type='sapclip_uni', crop_size=224, prototype=False,scale_bins=50)

@@ -176,7 +176,8 @@ class SAPCLIP_PCME(L.LightningModule):
         loss_type='pcme',
         anneal_T=1000,
         scale_encoding='onehot',
-        scale_bins=3
+        scale_bins=3,
+        **kwargs
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
@@ -201,6 +202,7 @@ class SAPCLIP_PCME(L.LightningModule):
             loss_type=loss_type,
             scale_encoding=scale_encoding,
             scale_bins=scale_bins,
+            **kwargs
         )
         self.scale_encoding = scale_encoding
         self.learning_rate = learning_rate
@@ -384,6 +386,7 @@ def get_args():
     parser.add_argument('--embed_dim', type=int, default=256)
     parser.add_argument('--crop_size', type=int, default=224)
     parser.add_argument('--vision_encoder', type=str, default='CLIP')
+    parser.add_argument('--pretrained_satclip', action='store_true', default=False)
 
     args = parser.parse_args()
     return args
@@ -433,7 +436,7 @@ if __name__ == '__main__':
         print('Using PCME type loss')
         sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
     vision_layers=args.vision_encoder, anneal_T=args.anneal_T,
-    scale_encoding=args.scale_encoding, scale_bins=args.scale_bins)
+    scale_encoding=args.scale_encoding, scale_bins=args.scale_bins, pretrained_satclip=args.pretrained_satclip)
     else:
         print('Using likelihood type loss')
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
