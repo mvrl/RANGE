@@ -260,16 +260,19 @@ class SatCLIP_2(nn.Module):
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07)).to(self.device)
 
         #define the scale encoder
-        self.scale_encoder = nn.Sequential(nn.Linear(scale_bins, embed_dim).double(),
-                                           nn.LeakyReLU(0.1).double(),
-                                           nn.Linear(embed_dim, embed_dim).double())
+        # self.scale_encoder = nn.Sequential(nn.Linear(scale_bins, embed_dim).double(),
+        #                                    nn.LeakyReLU(0.1).double(),
+        #                                    nn.Linear(embed_dim, embed_dim).double())
+        self.scale_encoder = nn.Linear(3, embed_dim).double()
         #define nn embeddings is scale encoding in learnable
         if self.scale_encoding=='learnable':
             self.learnable_scale_embeddings = nn.Embedding(3,scale_bins).to(self.device)
         
         #define the distribution learners
-        self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
-        self.fc_logvar = nn.Linear(embed_dim, embed_dim).double()
+        # self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
+        # self.fc_logvar = nn.Linear(embed_dim, embed_dim).double()
+        self.fc_mu = nn.Linear(2*embed_dim, embed_dim).double()
+        self.fc_logvar = nn.Linear(2*embed_dim, embed_dim).double()
 
         #select the appropriate function deterministic vs probablistic that prepares
         #the embeddings for the appropriate loss
@@ -296,7 +299,7 @@ class SatCLIP_2(nn.Module):
             raise ValueError('Invalid Value for loss type')
         
         #initilize weights
-        self.init_weights()
+        # self.init_weights()
     
     def init_weights(self):
         print('Initializing weights')
@@ -421,8 +424,8 @@ class SatCLIP_2(nn.Module):
             scale = hot_scale
         location_features = nn.functional.leaky_relu(self.location(coords.double()))
         scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
-        scaled_loc_features = location_features+scale_features
-        # scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
+        scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
+        # scaled_loc_features = location_features+scale_features
         scaled_loc_mu = self.fc_mu(scaled_loc_features).float()
         scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
         return [scaled_loc_mu, scaled_loc_logvar]

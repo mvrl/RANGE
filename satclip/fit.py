@@ -209,10 +209,10 @@ class SAPCLIP_PCME(L.LightningModule):
         self.delta_beta = 2/self.anneal_T
         self.kld_wt=0
         bins =  [torch.from_numpy(np.linspace(0,6,scale_bins+1)).double()]
-        self.PLE = PiecewiseLinearEncoding(bins)
-        scale_1_encoding = self.PLE(torch.tensor([1]))
-        scale_3_encoding = self.PLE(torch.tensor([3]))
-        scale_5_encoding = self.PLE(torch.tensor([5]))
+        # self.PLE = PiecewiseLinearEncoding(bins)
+        # scale_1_encoding = self.PLE(torch.tensor([1]))
+        # scale_3_encoding = self.PLE(torch.tensor([3]))
+        # scale_5_encoding = self.PLE(torch.tensor([5]))
         
         self.save_hyperparameters()
 
