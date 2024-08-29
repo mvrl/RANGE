@@ -1,4 +1,4 @@
-import argparse
+code mimport argparse
 import os
 from datetime import datetime
 from argparse import ArgumentParser
@@ -387,6 +387,7 @@ def get_args():
     parser.add_argument('--crop_size', type=int, default=224)
     parser.add_argument('--vision_encoder', type=str, default='CLIP')
     parser.add_argument('--pretrained_satclip', action='store_true', default=False)
+    parser.add_argument('--early_fusion', action='store_true', default=False)
 
     args = parser.parse_args()
     return args
@@ -436,7 +437,8 @@ if __name__ == '__main__':
         print('Using PCME type loss')
         sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
     vision_layers=args.vision_encoder, anneal_T=args.anneal_T,
-    scale_encoding=args.scale_encoding, scale_bins=args.scale_bins, pretrained_satclip=args.pretrained_satclip)
+    scale_encoding=args.scale_encoding, scale_bins=args.scale_bins,
+    satclip_pretrained=args.pretrained_satclip, early_fusion=args.early_fusion,)
     else:
         print('Using likelihood type loss')
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,

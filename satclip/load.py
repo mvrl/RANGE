@@ -17,4 +17,3 @@ def get_satclip(ckpt_path, device, return_all=False):
     else:
         return geo_model.location
     
-import code; code.interact(local=dict(globals(), **locals()))

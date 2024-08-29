@@ -18,7 +18,7 @@ from rshf.satmae import SatMAE
 
 #local imports
 from .location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
-from .datamodules.s2geo_dataset import S2Geo
+# from .datamodules.s2geo_dataset import S2Geo
 from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset, SAPCLIP_Dataset_H5
 from .vision_models.clip import Clip
 from .loss.pcme import MCSoftContrastiveLoss
@@ -41,160 +41,174 @@ class QuickGELU(nn.Module):
         return x * torch.sigmoid(1.702 * x)
 
 
-#original SatCLIP
-class SatCLIP(nn.Module):
-    def __init__(self,
-                 embed_dim: int,
-                 # vision
-                 image_resolution: int,
-                 vision_layers: Union[Tuple[int, int, int, int], int, str],
-                 vision_width: int,
-                 vision_patch_size: int,
-                 in_channels: int,
-                 # location
-                 le_type: str,
-                 pe_type: str,
-                 frequency_num: int, 
-                 max_radius: int,  
-                 min_radius: int,
-                 harmonics_calculation: str,
-                 legendre_polys: int=10, 
-                 sh_embedding_dims: int=16, 
-                 ffn: bool=True,
-                 num_hidden_layers: int=2,
-                 capacity: int=256,
-                 *args,
-                 **kwargs
-                 ):
-        super().__init__()
+# #original SatCLIP
+# class SatCLIP(nn.Module):
+#     def __init__(self,
+#                  embed_dim: int,
+#                  # vision
+#                  image_resolution: int,
+#                  vision_layers: Union[Tuple[int, int, int, int], int, str],
+#                  vision_width: int,
+#                  vision_patch_size: int,
+#                  in_channels: int,
+#                  # location
+#                  le_type: str,
+#                  pe_type: str,
+#                  frequency_num: int, 
+#                  max_radius: int,  
+#                  min_radius: int,
+#                  harmonics_calculation: str,
+#                  legendre_polys: int=10, 
+#                  sh_embedding_dims: int=16, 
+#                  ffn: bool=True,
+#                  num_hidden_layers: int=2,
+#                  capacity: int=256,
+#                  *args,
+#                  **kwargs
+#                  ):
+#         super().__init__()
             
-        if isinstance(vision_layers, (tuple, list)):
-            print('using modified resnet')
-            vision_heads = vision_width * 32 // 64
-            self.visual = ModifiedResNet(
-                layers=vision_layers,
-                output_dim=embed_dim,
-                heads=vision_heads,
-                input_resolution=image_resolution,
-                width=vision_width,
-                in_channels=in_channels
-            )
+#         if isinstance(vision_layers, (tuple, list)):
+#             print('using modified resnet')
+#             vision_heads = vision_width * 32 // 64
+#             self.visual = ModifiedResNet(
+#                 layers=vision_layers,
+#                 output_dim=embed_dim,
+#                 heads=vision_heads,
+#                 input_resolution=image_resolution,
+#                 width=vision_width,
+#                 in_channels=in_channels
+#             )
             
-        elif vision_layers == 'moco_resnet18':
-            print('using pretrained moco resnet18')
-            weights = ResNet18_Weights.SENTINEL2_ALL_MOCO
-            in_chans = weights.meta["in_chans"]
-            self.visual = timm.create_model("resnet18", in_chans=in_chans, num_classes=embed_dim)
-            self.visual.load_state_dict(weights.get_state_dict(progress=True), strict=False)
-            self.visual.requires_grad_(False)
-            self.visual.fc.requires_grad_(True)
+#         elif vision_layers == 'moco_resnet18':
+#             print('using pretrained moco resnet18')
+#             weights = ResNet18_Weights.SENTINEL2_ALL_MOCO
+#             in_chans = weights.meta["in_chans"]
+#             self.visual = timm.create_model("resnet18", in_chans=in_chans, num_classes=embed_dim)
+#             self.visual.load_state_dict(weights.get_state_dict(progress=True), strict=False)
+#             self.visual.requires_grad_(False)
+#             self.visual.fc.requires_grad_(True)
 
-        elif vision_layers == 'moco_resnet50':
-            print('using pretrained moco resnet50')
-            weights = ResNet50_Weights.SENTINEL2_ALL_MOCO
-            in_chans = weights.meta["in_chans"]
-            self.visual = timm.create_model("resnet50", in_chans=in_chans, num_classes=embed_dim)
-            self.visual.load_state_dict(weights.get_state_dict(progress=True), strict=False)
-            self.visual.requires_grad_(False)
-            self.visual.fc.requires_grad_(True)
+#         elif vision_layers == 'moco_resnet50':
+#             print('using pretrained moco resnet50')
+#             weights = ResNet50_Weights.SENTINEL2_ALL_MOCO
+#             in_chans = weights.meta["in_chans"]
+#             self.visual = timm.create_model("resnet50", in_chans=in_chans, num_classes=embed_dim)
+#             self.visual.load_state_dict(weights.get_state_dict(progress=True), strict=False)
+#             self.visual.requires_grad_(False)
+#             self.visual.fc.requires_grad_(True)
             
-        elif vision_layers == 'moco_vit16':
-            print('using pretrained moco vit16')
-            weights = ViTSmall16_Weights.SENTINEL2_ALL_MOCO
-            in_chans = weights.meta["in_chans"]
-            self.visual = timm.create_model("vit_small_patch16_224", in_chans=in_chans, num_classes=embed_dim)
-            self.visual.load_state_dict(weights.get_state_dict(progress=True), strict=False)
-            self.visual.requires_grad_(False)
-            self.visual.head.requires_grad_(True)
+#         elif vision_layers == 'moco_vit16':
+#             print('using pretrained moco vit16')
+#             weights = ViTSmall16_Weights.SENTINEL2_ALL_MOCO
+#             in_chans = weights.meta["in_chans"]
+#             self.visual = timm.create_model("vit_small_patch16_224", in_chans=in_chans, num_classes=embed_dim)
+#             self.visual.load_state_dict(weights.get_state_dict(progress=True), strict=False)
+#             self.visual.requires_grad_(False)
+#             self.visual.head.requires_grad_(True)
         
-        elif vision_layers == 'SATMAE':
-            print('Using Scale MAE')
-            pretrained_satmae_path = '/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/satmae_models/pretrain-vit-base-e199.pth'
-            self.visual = SatMAE(pretrained_models_path=pretrained_path, device=device, fc_dim=embed_dim)
-            self.visual.required_grad_(False)
-            self.visual.fc.required_grad_(True)
-            #### need to add SatMAE
+#         elif vision_layers == 'SATMAE':
+#             print('Using Scale MAE')
+#             pretrained_satmae_path = '/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/satmae_models/pretrain-vit-base-e199.pth'
+#             self.visual = SatMAE(pretrained_models_path=pretrained_path, device=device, fc_dim=embed_dim)
+#             self.visual.required_grad_(False)
+#             self.visual.fc.required_grad_(True)
+#             #### need to add SatMAE
 
-        else:
-            print('using vision transformer')
-            vision_heads = vision_width // 64
-            self.visual = VisionTransformer(
-                input_resolution=image_resolution,
-                patch_size=vision_patch_size,
-                width=vision_width,
-                layers=vision_layers,
-                heads=vision_heads,
-                output_dim=embed_dim,
-                in_channels=in_channels
-            )
+#         else:
+#             print('using vision transformer')
+#             vision_heads = vision_width // 64
+#             self.visual = VisionTransformer(
+#                 input_resolution=image_resolution,
+#                 patch_size=vision_patch_size,
+#                 width=vision_width,
+#                 layers=vision_layers,
+#                 heads=vision_heads,
+#                 output_dim=embed_dim,
+#                 in_channels=in_channels
+#             )
         
-        satclip_pretrained = kwargs.get('satclip_pretrained')
-        if not satclip_pretrained:        
-            print('Initializing new SatCLIP')
-            self.posenc = get_positional_encoding(name=le_type, harmonics_calculation=harmonics_calculation, legendre_polys=legendre_polys, min_radius=min_radius, max_radius=max_radius, frequency_num=frequency_num).double()
-            self.nnet = get_neural_network(name=pe_type, input_dim=self.posenc.embedding_dim, num_classes=embed_dim, dim_hidden=capacity, num_layers=num_hidden_layers).double()
-            self.location = LocationEncoder(self.posenc, 
-                                            self.nnet
-            ).double()
-        else:
-            print('Loading pretrained SatCLIP')
-            self.location = get_satclip(
-                    hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
-                device=device).double()
-            self.posenc = self.location.posenc.double()
-            self.nnet = self.location.nnet.double()
+#         satclip_pretrained = kwargs.get('satclip_pretrained')
+#         if not satclip_pretrained:        
+#             print('Initializing new SatCLIP')
+#             self.posenc = get_positional_encoding(name=le_type, harmonics_calculation=harmonics_calculation, legendre_polys=legendre_polys, min_radius=min_radius, max_radius=max_radius, frequency_num=frequency_num).double()
+#             self.nnet = get_neural_network(name=pe_type, input_dim=self.posenc.embedding_dim, num_classes=embed_dim, dim_hidden=capacity, num_layers=num_hidden_layers).double()
+#             self.location = LocationEncoder(self.posenc, 
+#                                             self.nnet
+#             ).double()
+#         else:
+#             print('Loading pretrained SatCLIP')
+#             self.location = get_satclip(
+#                     hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
+#                 device=device).double()
+#             self.posenc = self.location.posenc.double()
+#             self.nnet = self.location.nnet.double()
         
-        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-        self.initialize_parameters()
+#         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+#         self.initialize_parameters()
 
-    def initialize_parameters(self):
-        if isinstance(self.visual, ModifiedResNet):
-            if self.visual.attnpool is not None:
-                std = self.visual.attnpool.c_proj.in_features ** -0.5
-                nn.init.normal_(self.visual.attnpool.q_proj.weight, std=std)
-                nn.init.normal_(self.visual.attnpool.k_proj.weight, std=std)
-                nn.init.normal_(self.visual.attnpool.v_proj.weight, std=std)
-                nn.init.normal_(self.visual.attnpool.c_proj.weight, std=std)
+#     def initialize_parameters(self):
+#         if isinstance(self.visual, ModifiedResNet):
+#             if self.visual.attnpool is not None:
+#                 std = self.visual.attnpool.c_proj.in_features ** -0.5
+#                 nn.init.normal_(self.visual.attnpool.q_proj.weight, std=std)
+#                 nn.init.normal_(self.visual.attnpool.k_proj.weight, std=std)
+#                 nn.init.normal_(self.visual.attnpool.v_proj.weight, std=std)
+#                 nn.init.normal_(self.visual.attnpool.c_proj.weight, std=std)
 
-            for resnet_block in [self.visual.layer1, self.visual.layer2, self.visual.layer3, self.visual.layer4]:
-                for name, param in resnet_block.named_parameters():
-                    if name.endswith("bn3.weight"):
-                        nn.init.zeros_(param)
+#             for resnet_block in [self.visual.layer1, self.visual.layer2, self.visual.layer3, self.visual.layer4]:
+#                 for name, param in resnet_block.named_parameters():
+#                     if name.endswith("bn3.weight"):
+#                         nn.init.zeros_(param)
 
-    @property
-    def dtype(self):
-        if isinstance(self.visual, timm.models.vision_transformer.VisionTransformer):
-            return self.visual.patch_embed.proj.weight.dtype
-        else:
-            return self.visual.conv1.weight.dtype
+#     @property
+#     def dtype(self):
+#         if isinstance(self.visual, timm.models.vision_transformer.VisionTransformer):
+#             return self.visual.patch_embed.proj.weight.dtype
+#         else:
+#             return self.visual.conv1.weight.dtype
 
-    def encode_image(self, image):
-        return self.visual(image.type(self.dtype))
+#     def encode_image(self, image):
+#         return self.visual(image.type(self.dtype))
 
-    def encode_location(self, coords):
-        return self.location(coords.double())
+#     def encode_location(self, coords):
+#         return self.location(coords.double())
 
-    def forward(self, image, coords):
+#     def forward(self, image, coords):
 
-        image_features = self.encode_image(image)     
-        location_features = self.encode_location(coords).float()
-        # normalized features
-        image_features = image_features / image_features.norm(dim=1, keepdim=True)
-        location_features = location_features / location_features.norm(dim=1, keepdim=True)
+#         image_features = self.encode_image(image)     
+#         location_features = self.encode_location(coords).float()
+#         # normalized features
+#         image_features = image_features / image_features.norm(dim=1, keepdim=True)
+#         location_features = location_features / location_features.norm(dim=1, keepdim=True)
 
-        # cosine similarity as logits
-        logit_scale = self.logit_scale.exp()
-        logits_per_image = logit_scale * image_features @ location_features.t()
-        logits_per_location = logits_per_image.t()
+#         # cosine similarity as logits
+#         logit_scale = self.logit_scale.exp()
+#         logits_per_image = logit_scale * image_features @ location_features.t()
+#         logits_per_location = logits_per_image.t()
 
-        # shape = [global_batch_size, global_batch_size]
-        return logits_per_image, logits_per_location
+#         # shape = [global_batch_size, global_batch_size]
+#         return logits_per_image, logits_per_location
 
 
-def compute_isotropic_kld(mean, std):
-    kld = -1/2*(1+torch.log(std**2)-std**2-mean**2).sum(dim=-1)
-    return kld
+# def compute_isotropic_kld(mean, std):
+#     kld = -1/2*(1+torch.log(std**2)-std**2-mean**2).sum(dim=-1)
+#     return kld
 
+class MiniTransformer(nn.Module):
+    def __init__(self, input_dims, forward_dims, num_layers, num_heads, num_tokens):
+        super(MiniTransformer, self).__init__()
+        transformer_layer = nn.TransformerEncoderLayer(d_model=input_dims,
+             nhead=num_heads, dim_feedforward=forward_dims, batch_first=True).double()
+        self.transformer = nn.TransformerEncoder(transformer_layer, num_layers=num_layers).double() # shape = [batch, n_tokens, dim]
+        self.positional_encoding = nn.Parameter(torch.randn(1, seq_length+1, input_dims))
+        self.cls_token = nn.Parameter(torch.randn(dim))
+        
+    def forward(self, x):
+        x = x + self.positional_encoding
+        output = self.transformer(x)
+        return output
+        
 
 #my satclip class
 class SatCLIP_2(nn.Module):
@@ -279,6 +293,7 @@ class SatCLIP_2(nn.Module):
             self.posenc = self.location.posenc.double()
             self.nnet = self.location.nnet.double()
         
+        
         #initialize the logit scale
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07)).to(self.device)
 
@@ -286,10 +301,21 @@ class SatCLIP_2(nn.Module):
         # self.scale_encoder = nn.Sequential(nn.Linear(scale_bins, embed_dim).double(),
         #                                    nn.LeakyReLU(0.1).double(),
         #                                    nn.Linear(embed_dim, embed_dim).double())
-        self.scale_encoder = nn.Linear(3, embed_dim).double()
+        self.early_fusion = kwargs.get('early_fusion')
+        if self.early_fusion:
+            print('Using early fusion')
+            self.scale_encoder = nn.Linear(scale_bins, self.posenc.embedding_dim).double()
+            
+            self.mini_transformer = nn.TransformerEncoder(transformer_layer, num_layers=3).double() 
+            self.mini_transformer = self.MiniTransformer(input_dims=self.posenc.embedding_dim,
+             forward_dims=self.posenc.embedding_dim, num_layers=3, num_heads=8, seq_length=2).double() # input shape = [batch, n_tokens, dim]
+        else:
+            print('Using late fusion')
+            self.scale_encoder = nn.Linear(scale_bins, embed_dim).double()
+        
         #define nn embeddings is scale encoding in learnable
         if self.scale_encoding=='learnable':
-            self.learnable_scale_embeddings = nn.Embedding(3,scale_bins).to(self.device)
+            self.learnable_scale_embeddings = nn.Embedding(3,scale_bins).double().to(self.device)
         
         #define the distribution learners
         # self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
@@ -346,33 +372,6 @@ class SatCLIP_2(nn.Module):
 
     def probablistic_sapclip(self, image_features, location_mu, location_logvar, label, intervals):
         #do not normalize the image features
-        # image_features = image_features/image_features.norm(dim=-1, keepdim=True)
-        #get the dimension
-        
-        ### this is used for Multivariate Normal from here ##########
-        # dim = location_mu.shape[-1]
-        # #compute standard deviation from log(variance)
-        # location_std = torch.exp(location_logvar/2)
-        # #get the distribution for computed mean and std
-        # location_dist = [torch.distributions.MultivariateNormal(mu, torch.diag(std)) for mu,std in zip(location_mu, location_std)]
-        # # isotropic_dist = torch.distributions.MultivariateNormal(torch.zeros(dim).to(self.device), torch.eye(dim).to(self.device))
-        
-        # #compute KLD with isotropic normal
-        # kld = compute_isotropic_kld(location_mu, location_std).mean()
-        # mask = label.unsqueeze(-1)
-        # #compute likelihood for each location
-        # likelihood_per_location = torch.zeros(len(intervals), len(intervals), device=self.device)
-        # for i, loc in enumerate(location_dist):
-        #     # import code; code.interact(local=dict(globals(), **locals()))
-        #     log_prob = loc.log_prob(image_features)
-        #     summed_intervals = (log_prob*mask).sum(dim=1) #[batch_size, D]
-        #     # Divide by the interval lengths to get the mean across the crops
-        #     interval_lengths = intervals.view(-1, 1).float()
-        #     mean_intervals = summed_intervals / interval_lengths #[batch_size, D]
-        #     #finally sum across the dimensions per sample. We divide this by dims for numberical stability
-        #     sum_log_prob = torch.sum(mean_intervals, dim=-1)/dim #[batch_size]
-        #     #add log_prob to likelihood_per_location
-        #     likelihood_per_location[i,:] = sum_log_prob
         ##### to here ##########
         #get the dimension
         dim = location_mu.shape[-1]
@@ -398,7 +397,6 @@ class SatCLIP_2(nn.Module):
             sum_log_prob = torch.sum(mean_intervals, dim=-1)/dim #[batch_size]
             #add log_prob to likelihood_per_location
             likelihood_per_location[i,:] = sum_log_prob
-
         return (likelihood_per_location, kld)
     
     def pcme_loss(self, image_features, location_mu, location_logsigma, intervals):
@@ -441,16 +439,30 @@ class SatCLIP_2(nn.Module):
         return self.visual(image.type(self.dtype()))
 
     def encode_location(self, coords, hot_scale):
+        #check if the scale encoding is learnable
         if self.scale_encoding=='learnable':
             scale = self.learnable_scale_embeddings(hot_scale)
         else:
             scale = hot_scale
-        location_features = nn.functional.leaky_relu(self.location(coords.double()))
-        scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
-        scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
-        # scaled_loc_features = location_features+scale_features
-        scaled_loc_mu = self.fc_mu(scaled_loc_features).float()
-        scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
+        
+        #check if we are doing early fusion
+        if self.early_fusion:
+            import code; code.interact(local=dict(globals(), **locals()))
+
+            scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
+            harmonics_features = self.posenc(coords.double())
+            scale_harmonics_tokens = torch.stack([harmonics_features, scale_features], dim=1) 
+            scale_harmonics_features = self.mini_transformer(scale_harmonics_tokens.double())
+            scaled_harmonics = scale_harmonics_features.mean(dim=1, keepdim=False)
+            scaled_loc = self.nnet(scaled_harmonics)
+
+        else:         
+            location_features = nn.functional.leaky_relu(self.location(coords.double()))
+            scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
+            scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
+            # scaled_loc_features = location_features+scale_features
+            scaled_loc_mu = self.fc_mu(scaled_loc_features).float()
+            scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
         return [scaled_loc_mu, scaled_loc_logvar]
 
     def forward(self, batch):
@@ -521,7 +533,9 @@ def convert_weights(model: nn.Module):
     model.apply(_convert_weights_to_fp16)
 
 if __name__ == '__main__':
-    data_root = '/scratch/a.dhakal/hyper_satclip/data/satclip_data/satclip_sentinel/images'
+    # data_root = '/scratch/a.dhakal/hyper_satclip/data/satclip_data/satclip_sentinel/images'
+    data_root = '/projects/bdec/adhakal2/hyper_satclip/data/satclip_sentinel/images'
+    device = 'cpu'
     embed_dim=512
     image_resolution=256
     vision_layers='CLIP'
@@ -557,9 +571,10 @@ if __name__ == '__main__':
             sh_embedding_dims=sh_embedding_dims,
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
-            loss_type='probablistic',       
-            device='cuda',
-
+            loss_type='pcme_uni',
+            satclip_pretrained=True,
+            early_fusion=True,       
+            device=device,
         )
 
     dataset = SAPCLIP_Dataset(root=data_root, transform_type='sapclip_uni', crop_size=224, prototype=False,scale_bins=50)
@@ -567,9 +582,10 @@ if __name__ == '__main__':
      num_workers=0)
     
     batch = next(iter(train_loader))
-    visual_model = model.visual
-    
+    # visual_model = model.visual
+
     output = model(batch)
+    
     
     
 
