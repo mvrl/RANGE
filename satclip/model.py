@@ -201,12 +201,12 @@ class MiniTransformer(nn.Module):
         transformer_layer = nn.TransformerEncoderLayer(d_model=input_dims,
              nhead=num_heads, dim_feedforward=forward_dims, batch_first=True).double()
         self.transformer = nn.TransformerEncoder(transformer_layer, num_layers=num_layers).double() # shape = [batch, n_tokens, dim]
-        self.positional_encoding = nn.Parameter(torch.randn(1, seq_length+1, input_dims))
-        self.cls_token = nn.Parameter(torch.randn(dim))
+        self.positional_encoding = nn.Parameter(torch.randn(1, num_tokens, input_dims))
         
     def forward(self, x):
         x = x + self.positional_encoding
         output = self.transformer(x)
+        output = output.mean(dim=1, keepdim=False)
         return output
         
 
@@ -306,12 +306,15 @@ class SatCLIP_2(nn.Module):
             print('Using early fusion')
             self.scale_encoder = nn.Linear(scale_bins, self.posenc.embedding_dim).double()
             
-            self.mini_transformer = nn.TransformerEncoder(transformer_layer, num_layers=3).double() 
-            self.mini_transformer = self.MiniTransformer(input_dims=self.posenc.embedding_dim,
-             forward_dims=self.posenc.embedding_dim, num_layers=3, num_heads=8, seq_length=2).double() # input shape = [batch, n_tokens, dim]
+            self.mini_transformer = MiniTransformer(input_dims=self.posenc.embedding_dim,
+             forward_dims=self.posenc.embedding_dim, num_layers=3, num_heads=8, num_tokens=2).double() # input shape = [batch, n_tokens, dim]
+            self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
+            self.fc_logvar = nn.Linear(embed_dim, embed_dim).double()
         else:
             print('Using late fusion')
             self.scale_encoder = nn.Linear(scale_bins, embed_dim).double()
+            self.fc_mu = nn.Linear(2*embed_dim, embed_dim).double()
+            self.fc_logvar = nn.Linear(2*embed_dim, embed_dim).double()
         
         #define nn embeddings is scale encoding in learnable
         if self.scale_encoding=='learnable':
@@ -320,8 +323,7 @@ class SatCLIP_2(nn.Module):
         #define the distribution learners
         # self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
         # self.fc_logvar = nn.Linear(embed_dim, embed_dim).double()
-        self.fc_mu = nn.Linear(2*embed_dim, embed_dim).double()
-        self.fc_logvar = nn.Linear(2*embed_dim, embed_dim).double()
+
 
         #select the appropriate function deterministic vs probablistic that prepares
         #the embeddings for the appropriate loss
@@ -447,22 +449,20 @@ class SatCLIP_2(nn.Module):
         
         #check if we are doing early fusion
         if self.early_fusion:
-            import code; code.interact(local=dict(globals(), **locals()))
-
             scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
             harmonics_features = self.posenc(coords.double())
             scale_harmonics_tokens = torch.stack([harmonics_features, scale_features], dim=1) 
-            scale_harmonics_features = self.mini_transformer(scale_harmonics_tokens.double())
-            scaled_harmonics = scale_harmonics_features.mean(dim=1, keepdim=False)
-            scaled_loc = self.nnet(scaled_harmonics)
+            scaled_harmonics = self.mini_transformer(scale_harmonics_tokens.double())
+            scaled_loc_features = self.nnet(scaled_harmonics)
 
         else:         
             location_features = nn.functional.leaky_relu(self.location(coords.double()))
             scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
             scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
             # scaled_loc_features = location_features+scale_features
-            scaled_loc_mu = self.fc_mu(scaled_loc_features).float()
-            scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
+        import code; code.interact(local=dict(globals(), **locals()))
+        scaled_loc_mu = self.fc_mu(scaled_loc_features).double()
+        scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
         return [scaled_loc_mu, scaled_loc_logvar]
 
     def forward(self, batch):
@@ -536,7 +536,7 @@ if __name__ == '__main__':
     # data_root = '/scratch/a.dhakal/hyper_satclip/data/satclip_data/satclip_sentinel/images'
     data_root = '/projects/bdec/adhakal2/hyper_satclip/data/satclip_sentinel/images'
     device = 'cpu'
-    embed_dim=512
+    embed_dim=256
     image_resolution=256
     vision_layers='CLIP'
     vision_width=768
