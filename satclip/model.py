@@ -22,6 +22,7 @@ from .location_encoder import get_positional_encoding, get_neural_network, Locat
 from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset, SAPCLIP_Dataset_H5
 from .vision_models.clip import Clip
 from .vision_models.satmae import SatMAE
+from .vision_models.temp import temp_layer
 from .loss.pcme import MCSoftContrastiveLoss
 from .utils.utils import sample_gaussian_tensors
 from .load import get_satclip
@@ -296,7 +297,7 @@ class SatCLIP_2(nn.Module):
         
         
         #initialize the logit scale
-        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07)).to(self.device)
+        self.temp_layer = temp_layer()
 
         #define the scale encoder
         # self.scale_encoder = nn.Sequential(nn.Linear(scale_bins, embed_dim).double(),
@@ -340,6 +341,7 @@ class SatCLIP_2(nn.Module):
             self.img_fc_mu = nn.Linear(embed_dim, embed_dim)
             self.img_fc_logvar = nn.Linear(embed_dim ,embed_dim)
             self.pcme_criterion = MCSoftContrastiveLoss()
+            self.init_weights()
         
         elif loss_type=='pcme_uni':
             print('Using pcme uni loss')
@@ -347,12 +349,16 @@ class SatCLIP_2(nn.Module):
             self.img_fc_mu = nn.Linear(embed_dim, embed_dim)
             self.img_fc_logvar = nn.Linear(embed_dim ,embed_dim)
             self.pcme_criterion = MCSoftContrastiveLoss()
+            self.init_weights()
+        
+        elif loss_type=='clip':
+            print('Using CLIP loss')
         
         else:
             raise ValueError('Invalid Value for loss type')
         
         #initilize weights
-        self.init_weights()
+       
     
     def init_weights(self):
         print('Initializing weights')
@@ -380,6 +386,36 @@ class SatCLIP_2(nn.Module):
             return self.visual.conv1.weight.dtype
 
 
+    def encode_image(self, image): 
+        return self.visual(image.type(self.dtype()))
+
+    def encode_location(self, coords, hot_scale):
+        #check if the scale encoding is learnable
+        if self.scale_encoding=='learnable':
+            scale = self.learnable_scale_embeddings(hot_scale)
+        else:
+            scale = hot_scale
+        
+        #check if we are doing early fusion
+        if self.early_fusion:
+            scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
+            harmonics_features = self.posenc(coords.double())
+            scale_harmonics_tokens = torch.stack([harmonics_features, scale_features], dim=1) 
+            scaled_harmonics = self.mini_transformer(scale_harmonics_tokens.double())
+            scaled_loc_features = self.nnet(scaled_harmonics)
+        else:         
+            location_features = nn.functional.leaky_relu(self.location(coords.double()))
+            scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
+            scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
+            # scaled_loc_features = location_features+scale_features
+        
+        if self.loss_type=='clip':
+            return scaled_loc_features
+        else:
+            scaled_loc_mu = self.fc_mu(scaled_loc_features).double()
+            scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
+            return [scaled_loc_mu, scaled_loc_logvar]
+    
     def probablistic_sapclip(self, image_features, location_mu, location_logvar, label, intervals):
         #do not normalize the image features
         ##### to here ##########
@@ -444,33 +480,12 @@ class SatCLIP_2(nn.Module):
 
         pcme_loss, pcme_loss_dict = self.pcme_criterion(img_samples, loc_samples, img_logsigma, location_logsigma, None, None)
         return (pcme_loss, pcme_loss_dict)
-
-    def encode_image(self, image): 
-        return self.visual(image.type(self.dtype()))
-
-    def encode_location(self, coords, hot_scale):
-        #check if the scale encoding is learnable
-        if self.scale_encoding=='learnable':
-            scale = self.learnable_scale_embeddings(hot_scale)
-        else:
-            scale = hot_scale
-        
-        #check if we are doing early fusion
-        if self.early_fusion:
-            scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
-            harmonics_features = self.posenc(coords.double())
-            scale_harmonics_tokens = torch.stack([harmonics_features, scale_features], dim=1) 
-            scaled_harmonics = self.mini_transformer(scale_harmonics_tokens.double())
-            scaled_loc_features = self.nnet(scaled_harmonics)
-
-        else:         
-            location_features = nn.functional.leaky_relu(self.location(coords.double()))
-            scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
-            scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
-            # scaled_loc_features = location_features+scale_features
-        scaled_loc_mu = self.fc_mu(scaled_loc_features).double()
-        scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
-        return [scaled_loc_mu, scaled_loc_logvar]
+    
+    def clip_loss(self, img_to_loc_similarity):
+        img_to_loc_loss = torch.nn.functional.cross_entropy(img_to_loc_similarity, torch.arange(len(img_to_loc_similarity)))
+        loc_to_img_loss = torch.nn.functional.cross_entropy(img_to_loc_similarity.t(), torch.arange(len(img_to_loc_similarity)))
+        clip_loss = (img_to_loc_loss + loc_to_img_loss)/2.0
+        return clip_loss
 
     def forward(self, batch):
         image = batch['image']
@@ -482,22 +497,35 @@ class SatCLIP_2(nn.Module):
 
         #compute embeddings from both directions
         image_features = self.encode_image(image)
-   
-        mu, logvar = self.encode_location(coords, hot_scale)
-        if self.loss_type=='pcme' or self.loss_type=='pcme_uni':
-            pcme_loss, pcme_loss_dict = self.loss_prep(image_features, mu, logvar, scale)
-            return (pcme_loss, pcme_loss_dict)
+        if self.loss_type=='clip':
+            loc_features = self.encode_location(coords,hot_scale)
+            #compute cosine similarities
+            image_features = image_features/image_features.norm(p=2, dim=-1, keepdim=True)
+            loc_features = loc_features/loc_features.norm(p=2, dim=-1, keepdim=True)
+            img_to_loc_sim = image_features.double() @ loc_features.t()
+            #get the logit scale
+            logit_scale = self.temp_layer.logit_scale.exp()
+            img_to_loc_sim = img_to_loc_sim*logit_scale
+            #compute clip loss
+            clip_loss = self.clip_loss(img_to_loc_sim)
+            clip_dict = {'logit_scale':1/self.temp_layer.logit_scale.data.exp()}
+            return (clip_loss, clip_dict)
         else:
-            #compute likelihood per location for each sample [batch_size, batch_size]
-            likelihood_per_location, kld_loss = self.loss_prep(image_features, mu, logvar, scale)
-            logit_scale = self.logit_scale.exp()
+            mu, logvar = self.encode_location(coords, hot_scale)
+            if self.loss_type=='pcme' or self.loss_type=='pcme_uni':
+                pcme_loss, pcme_loss_dict = self.loss_prep(image_features, mu, logvar, scale)
+                return (pcme_loss, pcme_loss_dict)
+            else:
+                #compute likelihood per location for each sample [batch_size, batch_size]
+                likelihood_per_location, kld_loss = self.loss_prep(image_features, mu, logvar, scale)
+                logit_scale = self.temp_layer.logit_scale.exp()
 
-            likelihood_per_location = likelihood_per_location*logit_scale
+                likelihood_per_location = likelihood_per_location*logit_scale
 
-            #compute contrastive loss
-            contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0], device=self.device))
-            
-            return contrastive_loss, kld_loss
+                #compute contrastive loss
+                contrastive_loss = torch.nn.functional.cross_entropy(likelihood_per_location, torch.eye(likelihood_per_location.shape[0], device=self.device))
+                
+                return contrastive_loss, kld_loss
 
 
 def deterministic_sapclip(image_features, location_features, label):
@@ -578,10 +606,12 @@ if __name__ == '__main__':
             sh_embedding_dims=sh_embedding_dims,
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
-            loss_type='pcme_uni',
+            loss_type='clip',
             satclip_pretrained=True,
-            early_fusion=True,       
+            early_fusion=True,    
+            num_t_layers=1,
             device=device,
+
         )
 
     dataset = SAPCLIP_Dataset(root=data_root, transform_type='sapclip_uni', crop_size=224, prototype=False,scale_bins=50)
@@ -592,6 +622,7 @@ if __name__ == '__main__':
     # visual_model = model.visual
 
     output = model(batch)
+    import code; code.interact(local=dict(globals(), **locals()))
     
     
     
