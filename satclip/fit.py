@@ -1,4 +1,4 @@
-code mimport argparse
+import argparse
 import os
 from datetime import datetime
 from argparse import ArgumentParser
@@ -286,13 +286,17 @@ class SAPCLIP_PCME(L.LightningModule):
        # only log every 3rd epoch
         if self.current_epoch%3==0:
              # read the data
-            df_train = pd.read_csv('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/ecoregion_train.csv')
-            df_test = pd.read_csv('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/ecoregion_val.csv')
+            df = pd.read_csv('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/ecoregion_train.csv')
+            # df_test = pd.read_csv('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/ecoregion_val.csv')
 
-            df = pd.concat([df_train, df_test])
-            labels = pd.factorize(df['BIOME_NAME'])[0]
-            ytrain = labels[:len(df_train)]
-            ytest = labels[len(df_train):]
+            # df = pd.concat([df_train, df_test])
+            labels_biome = pd.factorize(df['BIOME_NAME'])[0]
+            labels_eco = pd.factorize(df['ECO_BIOME_'])[0]
+            # ytrain_biome = labels_biome[:len(df_train)]
+            # ytest_biome = labels_biome[len(df_train):]
+
+            # y_train_eco = labels_eco[:len(df_train)]
+            # y_test_eco = labels_eco[len(df_train):]
 
             coords = df[['X', 'Y']].values
             coords = torch.from_numpy(coords).double()
@@ -334,16 +338,20 @@ class SAPCLIP_PCME(L.LightningModule):
             loc_sigma_5 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
 
             loc_mu = (loc_mu_1 + loc_mu_3 + loc_mu_5)/3
-            xtrain_sapclip = loc_mu[:len(df_train)]
-            xtest_sapclip = loc_mu[len(df_train):]
+            xtrain_sapclip = loc_mu[:len(df)]
             scaler = MinMaxScaler()
             xtrain_sapclip = scaler.fit_transform(xtrain_sapclip)
-            xtest_sapclip = scaler.transform(xtest_sapclip)
-            clf_sapclip = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
-            clf_sapclip.fit(xtrain_sapclip, ytrain)
-
-            acc = clf_sapclip.score(xtrain_sapclip, ytrain)
-            self.log('BIOME_ACC', acc, prog_bar=True, sync_dist=True)
+            
+            #biome accuracy
+            clf_biome = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
+            clf_biome.fit(xtrain_sapclip, labels_biome)
+            acc_biome = clf_biome.score(xtrain_sapclip, labels_biome)
+            self.log('BIOME_ACC', acc_biome, prog_bar=True, sync_dist=True)
+            #eco accuracy
+            clf_eco = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
+            clf_eco.fit(xtrain_sapclip, labels_eco)
+            acc_eco = clf_eco.score(xtrain_sapclip, labels_eco)
+            self.log('ECO_REGIONS', acc_eco, prog_bar=True, sync_dist=True)
         else:
             pass
 
@@ -363,10 +371,10 @@ def get_args():
     parser.add_argument('--devices', default=1)
     parser.add_argument('--mode', type=str, default='dev')
     parser.add_argument('--accumulate_grad', type=int, default=16)
+    parser.add_argument('--ckpt_path', type=str, default=None)
 
     #logger arguments
     parser.add_argument('--log_dir', type=str, default='/scratch/a.dhakal/hyper_satclip/logs')
-    parser.add_argument('--ckpt_path', type=str, default='')
     parser.add_argument('--ckpt_mode', type=str, default='hard')
     parser.add_argument('--project_name', type=str, default='SAPCLIP')
     parser.add_argument('--run_name', type=str, default='dev')
@@ -388,6 +396,7 @@ def get_args():
     parser.add_argument('--vision_encoder', type=str, default='CLIP')
     parser.add_argument('--pretrained_satclip', action='store_true', default=False)
     parser.add_argument('--early_fusion', action='store_true', default=False)
+    parser.add_argument('--num_transformer_layers', type=int, default=3)
 
     args = parser.parse_args()
     return args
@@ -405,7 +414,9 @@ if __name__ == '__main__':
     #initialize checkpoint monitor
     ckpt_monitors = (ModelCheckpoint(monitor='val_loss', filename='{epoch}-{val_loss:.3f}',
              mode='min', save_top_k=10, save_last=True),
-             ModelCheckpoint(monitor='BIOME_ACC', filename='{epoch}-{biome_acc:.3f}',
+             ModelCheckpoint(monitor='BIOME_ACC', filename='{epoch}-{acc_biome:.3f}',
+             mode='max', save_top_k=10, save_last=True),
+             ModelCheckpoint(monitor='ECO_REGIONS', filename='{epoch}-{acc_eco:.3f}',
              mode='max', save_top_k=10, save_last=True))
 
     #initialize trainer
@@ -435,10 +446,15 @@ if __name__ == '__main__':
     #initialize model
     if args.loss_type=='pcme' or args.loss_type=='pcme_uni':
         print('Using PCME type loss')
+        if args.ckpt_path:
+            print('Starting training from ckpt')
+            SAPCLIP_PCME.load_from_checkpoint(args.ckpt_path)
+        else:
+            print('Starting fresh training')
         sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
     vision_layers=args.vision_encoder, anneal_T=args.anneal_T,
     scale_encoding=args.scale_encoding, scale_bins=args.scale_bins,
-    satclip_pretrained=args.pretrained_satclip, early_fusion=args.early_fusion,)
+    satclip_pretrained=args.pretrained_satclip, early_fusion=args.early_fusion,num_t_layers=args.num_transformer_layers)
     else:
         print('Using likelihood type loss')
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
