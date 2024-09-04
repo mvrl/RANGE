@@ -14,13 +14,14 @@ from huggingface_hub import hf_hub_download
 
 
 from transformers import CLIPVisionModelWithProjection
-from rshf.satmae import SatMAE
+
 
 #local imports
 from .location_encoder import get_positional_encoding, get_neural_network, LocationEncoder
 # from .datamodules.s2geo_dataset import S2Geo
 from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset, SAPCLIP_Dataset_H5
 from .vision_models.clip import Clip
+from .vision_models.satmae import SatMAE
 from .loss.pcme import MCSoftContrastiveLoss
 from .utils.utils import sample_gaussian_tensors
 from .load import get_satclip
@@ -302,12 +303,13 @@ class SatCLIP_2(nn.Module):
         #                                    nn.LeakyReLU(0.1).double(),
         #                                    nn.Linear(embed_dim, embed_dim).double())
         self.early_fusion = kwargs.get('early_fusion')
+        self.num_t_layers = kwargs.get('num_t_layers')
         if self.early_fusion:
             print('Using early fusion')
             self.scale_encoder = nn.Linear(scale_bins, self.posenc.embedding_dim).double()
             
             self.mini_transformer = MiniTransformer(input_dims=self.posenc.embedding_dim,
-             forward_dims=self.posenc.embedding_dim, num_layers=3, num_heads=8, num_tokens=2).double() # input shape = [batch, n_tokens, dim]
+             forward_dims=self.posenc.embedding_dim, num_layers=self.num_t_layers, num_heads=8, num_tokens=2).double() # input shape = [batch, n_tokens, dim]
             self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
             self.fc_logvar = nn.Linear(embed_dim, embed_dim).double()
         else:
@@ -336,36 +338,42 @@ class SatCLIP_2(nn.Module):
             print('Using pcme loss')
             self.loss_prep=self.pcme_loss
             self.img_fc_mu = nn.Linear(embed_dim, embed_dim)
-            self.img_fc_logsigma = nn.Linear(embed_dim ,embed_dim)
+            self.img_fc_logvar = nn.Linear(embed_dim ,embed_dim)
             self.pcme_criterion = MCSoftContrastiveLoss()
         
         elif loss_type=='pcme_uni':
             print('Using pcme uni loss')
             self.loss_prep= self.pcme_uni_loss
             self.img_fc_mu = nn.Linear(embed_dim, embed_dim)
-            self.img_fc_logsigma = nn.Linear(embed_dim ,embed_dim)
+            self.img_fc_logvar = nn.Linear(embed_dim ,embed_dim)
             self.pcme_criterion = MCSoftContrastiveLoss()
         
         else:
             raise ValueError('Invalid Value for loss type')
         
         #initilize weights
-        # self.init_weights()
+        self.init_weights()
     
     def init_weights(self):
         print('Initializing weights')
         r = np.sqrt(6.) / np.sqrt(self.fc_mu.in_features +
                                   self.fc_mu.out_features)
+        # initialize the dist layers for location       
         self.fc_mu.weight.data.uniform_(-r, r)
         self.fc_mu.bias.data.fill_(-4)
         self.fc_logvar.weight.data.uniform_(-r, r)
         self.fc_logvar.bias.data.fill_(-4)
+        #initialize the dist layers for image
+        self.img_fc_mu.weight.data.uniform_(-r, r)
+        self.img_fc_mu.bias.data.fill_(-4)
+        self.img_fc_logvar.weight.data.uniform_(-r, r)
+        self.img_fc_logvar.bias.data.fill_(-4)
 
     def dtype(self):
         if isinstance(self.visual, timm.models.vision_transformer.VisionTransformer):
             return self.visual.patch_embed.proj.weight.dtype
         elif self.vision_layers=='SatMAE':
-            return self.visual.fc.weight.dtype
+            return self.visual.projection_layer.weight.dtype
         elif self.vision_layers=='CLIP':
             return self.visual.vision_model.visual_projection.weight.dtype
         else:
@@ -406,7 +414,7 @@ class SatCLIP_2(nn.Module):
         
         batch_size, dim = location_mu.shape
         img_mu = self.img_fc_mu(image_features)
-        img_logsigma = self.img_fc_logsigma(image_features)
+        img_logsigma = self.img_fc_logvar(image_features)
         # generate samples from each distribution
         img_samples = sample_gaussian_tensors(img_mu, img_logsigma, 10) # shape = [total, 10, D]
         loc_samples = sample_gaussian_tensors(location_mu, location_logsigma, 10) # shape = [B, 10, D]
@@ -429,7 +437,7 @@ class SatCLIP_2(nn.Module):
     def pcme_uni_loss(self, image_features, location_mu, location_logsigma, intervals):
         batch_size, dim = location_mu.shape
         img_mu = self.img_fc_mu(image_features)
-        img_logsigma = self.img_fc_logsigma(image_features)
+        img_logsigma = self.img_fc_logvar(image_features)
         # generate samples from each distribution
         img_samples = sample_gaussian_tensors(img_mu, img_logsigma, 8) # shape = [B, 10, D]
         loc_samples = sample_gaussian_tensors(location_mu, location_logsigma, 8) # shape = [B, 10, D]
@@ -460,7 +468,6 @@ class SatCLIP_2(nn.Module):
             scale_features = nn.functional.leaky_relu(self.scale_encoder(scale.double()))
             scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
             # scaled_loc_features = location_features+scale_features
-        import code; code.interact(local=dict(globals(), **locals()))
         scaled_loc_mu = self.fc_mu(scaled_loc_features).double()
         scaled_loc_logvar = self.fc_logvar(scaled_loc_features).float()
         return [scaled_loc_mu, scaled_loc_logvar]
