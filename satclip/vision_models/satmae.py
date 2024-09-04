@@ -10,13 +10,12 @@ class SatMAE(nn.Module):
         self.projection_layer = nn.Linear(1024, embed_dim)
     def forward(self,x):
         batch_tensors = self.vision_model.forward_encoder(x, mask_ratio=0.0)[0]
-        import code; code.interact(local=dict(globals(), **locals()))
         pooled_tensors = batch_tensors[:,1:,:].mean(dim=1)
         output = self.projection_layer(pooled_tensors)
         return output
 
 if __name__ == '__main__':
-    model = SatMAE(256, 'cuda', '16')
+    model = SatMAE(256, 'cuda')
     data = torch.rand(2,3,224,224)
     model(data)
     
