@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 import math
+import os
 
 import timm
 import torchgeo.models
@@ -296,8 +297,7 @@ class SatCLIP_2(nn.Module):
             self.nnet = self.location.nnet.double()
         
         
-        #initialize the logit scale
-        self.temp_layer = temp_layer()
+
 
         #define the scale encoder
         # self.scale_encoder = nn.Sequential(nn.Linear(scale_bins, embed_dim).double(),
@@ -322,10 +322,6 @@ class SatCLIP_2(nn.Module):
         #define nn embeddings is scale encoding in learnable
         if self.scale_encoding=='learnable':
             self.learnable_scale_embeddings = nn.Embedding(3,scale_bins).double().to(self.device)
-        
-        #define the distribution learners
-        # self.fc_mu = nn.Linear(embed_dim, embed_dim).double()
-        # self.fc_logvar = nn.Linear(embed_dim, embed_dim).double()
 
 
         #select the appropriate function deterministic vs probablistic that prepares
@@ -353,11 +349,14 @@ class SatCLIP_2(nn.Module):
         
         elif loss_type=='clip':
             print('Using CLIP loss')
+            #initialize the logit scale
+            self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 /0.07))
+            del self.fc_mu
+            del self.fc_logvar
         
         else:
             raise ValueError('Invalid Value for loss type')
         
-        #initilize weights
        
     
     def init_weights(self):
@@ -409,7 +408,7 @@ class SatCLIP_2(nn.Module):
             scaled_loc_features = torch.cat([location_features, scale_features], dim=-1)
             # scaled_loc_features = location_features+scale_features
         
-        if self.loss_type=='clip':
+        if 'clip' in self.loss_type:
             return scaled_loc_features
         else:
             scaled_loc_mu = self.fc_mu(scaled_loc_features).double()
@@ -482,8 +481,8 @@ class SatCLIP_2(nn.Module):
         return (pcme_loss, pcme_loss_dict)
     
     def clip_loss(self, img_to_loc_similarity):
-        img_to_loc_loss = torch.nn.functional.cross_entropy(img_to_loc_similarity, torch.arange(len(img_to_loc_similarity)))
-        loc_to_img_loss = torch.nn.functional.cross_entropy(img_to_loc_similarity.t(), torch.arange(len(img_to_loc_similarity)))
+        img_to_loc_loss = torch.nn.functional.cross_entropy(img_to_loc_similarity, torch.arange(len(img_to_loc_similarity)).to(self.device))
+        loc_to_img_loss = torch.nn.functional.cross_entropy(img_to_loc_similarity.t(), torch.arange(len(img_to_loc_similarity)).to(self.device))
         clip_loss = (img_to_loc_loss + loc_to_img_loss)/2.0
         return clip_loss
 
@@ -504,11 +503,11 @@ class SatCLIP_2(nn.Module):
             loc_features = loc_features/loc_features.norm(p=2, dim=-1, keepdim=True)
             img_to_loc_sim = image_features.double() @ loc_features.t()
             #get the logit scale
-            logit_scale = self.temp_layer.logit_scale.exp()
+            logit_scale = self.logit_scale.exp()
             img_to_loc_sim = img_to_loc_sim*logit_scale
             #compute clip loss
             clip_loss = self.clip_loss(img_to_loc_sim)
-            clip_dict = {'logit_scale':1/self.temp_layer.logit_scale.data.exp()}
+            clip_dict = {'logit_scale':1/self.logit_scale.data.exp()}
             return (clip_loss, clip_dict)
         else:
             mu, logvar = self.encode_location(coords, hot_scale)
@@ -518,7 +517,7 @@ class SatCLIP_2(nn.Module):
             else:
                 #compute likelihood per location for each sample [batch_size, batch_size]
                 likelihood_per_location, kld_loss = self.loss_prep(image_features, mu, logvar, scale)
-                logit_scale = self.temp_layer.logit_scale.exp()
+                logit_scale = self.logit_scale.exp()
 
                 likelihood_per_location = likelihood_per_location*logit_scale
 
