@@ -24,6 +24,14 @@ from .datamodules.sapclip_dataset import SAPCLIP_Dataset, get_split_dataset, SAP
 
 torch.set_float32_matmul_precision('high')
 
+def str_to_frac(vals):
+    vals = vals.split(',')
+    l = []
+    for val in vals:
+        num, denom = val.split('/')
+        l.append(int(num)/int(denom))
+    return l
+
 def contrastive_loss(similarity, labels):
     #labels is class probablities of shape [N,C], where C is the number of classes 
     return F.cross_entropy(similarity, labels)
@@ -204,6 +212,7 @@ class SAPCLIP_PCME(L.LightningModule):
             scale_bins=scale_bins,
             **kwargs
         )
+        self.loss_type=loss_type
         self.scale_encoding = scale_encoding
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
@@ -266,21 +275,28 @@ class SAPCLIP_PCME(L.LightningModule):
     
     #define the forward pass
     def forward(self, batch, batch_idx):      
-        pcme_loss, pcme_dict = self.model(batch)
-
-        return pcme_loss, pcme_dict
+        loss, loss_dict = self.model(batch)
+        return loss, loss_dict
 
     def training_step(self, batch, batch_idx):
-        pcme_loss, pcme_dict = self(batch, batch_idx)
-        self.log('pcme_train_loss', pcme_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
-        self.log('train_kld_loss', pcme_dict['vib_loss'], batch_size=len(batch), prog_bar=True, sync_dist=True)
-        return pcme_loss
+        loss, loss_dict = self(batch, batch_idx)
+        if self.loss_type=='clip':
+            self.log('train_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+            self.log('logit_scale', loss_dict['logit_scale'], batch_size=len(batch), prog_bar=True, sync_dist=True)
+        else:
+            self.log('train_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+            self.log('train_kld_loss', loss_dict['vib_loss'], batch_size=len(batch), prog_bar=True, sync_dist=True)
+        return loss
 
     def validation_step(self, batch, batch_idx):
-        pcme_loss, pcme_dict = self(batch, batch_idx)
-        self.log('val_loss', pcme_loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
-        self.log('val_kld_loss', pcme_dict['vib_loss'], batch_size=len(batch), prog_bar=True, sync_dist=True)
-        return pcme_loss
+        loss, loss_dict = self(batch, batch_idx)
+        if self.loss_type=='clip':
+            self.log('val_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+            self.log('logit_scale', loss_dict['logit_scale'], batch_size=len(batch), prog_bar=True, sync_dist=True)
+        else:
+            self.log('val_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
+            self.log('val_kld_loss', loss_dict['vib_loss'], batch_size=len(batch), prog_bar=True, sync_dist=True)
+        return loss
     
     def on_validation_epoch_end(self):
        # only log every 3rd epoch
@@ -327,17 +343,23 @@ class SAPCLIP_PCME(L.LightningModule):
 
             # generate sapclip embeddings
             #instead of computing sapclip embeddings for individual scale, compute for all scales and average the embeddings
-            loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_1)
-            loc_mu_1 = loc_embeddings[0].detach().cpu().numpy()
-            loc_sigma_1 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
-            loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_3)
-            loc_mu_3 = loc_embeddings[0].detach().cpu().numpy()
-            loc_sigma_3 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
-            loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_5)
-            loc_mu_5 = loc_embeddings[0].detach().cpu().numpy()
-            loc_sigma_5 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
+            if 'pcme' in self.loss_type:
+                loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_1)
+                loc_mu_1 = loc_embeddings[0].detach().cpu().numpy()
+                loc_sigma_1 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
+                loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_3)
+                loc_mu_3 = loc_embeddings[0].detach().cpu().numpy()
+                loc_sigma_3 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
+                loc_embeddings = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_5)
+                loc_mu_5 = loc_embeddings[0].detach().cpu().numpy()
+                loc_sigma_5 = torch.exp(loc_embeddings[1]).detach().cpu().numpy()
 
-            loc_mu = (loc_mu_1 + loc_mu_3 + loc_mu_5)/3
+            elif 'clip' in self.loss_type:
+                loc_mu_1 = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_1).detach().cpu().numpy()
+                loc_mu_3 = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_3).detach().cpu().numpy()
+                loc_mu_5 = sapclip_encoder.encode_location(coords=loc, hot_scale=scale_5).detach().cpu().numpy()
+            
+            loc_mu = loc_mu_1#(loc_mu_1 + loc_mu_3 + loc_mu_5)/3
             xtrain_sapclip = loc_mu[:len(df)]
             scaler = MinMaxScaler()
             xtrain_sapclip = scaler.fit_transform(xtrain_sapclip)
@@ -363,6 +385,7 @@ def get_args():
     parser.add_argument('--dataset_type', type=str, default='h5')
     parser.add_argument('--batch_size',type=int, default=512)
     parser.add_argument('--data_root', type=str, default='/home/a.dhakal/active/proj_smart/satclip_sentinel/images')
+    parser.add_argument('--scale_ratio', type=str, default='1/3,1/3,1/3')
 
     #trainer arguments
     parser.add_argument('--max_epochs', type=int, default=10)
@@ -435,27 +458,28 @@ if __name__ == '__main__':
         raise ValueError('Invalid value for mode')
     
     #get dataloaders
-    if args.dataset_type=='normal':
-        dataset = SAPCLIP_Dataset(root=args.data_root, transform_type=args.transform_type, crop_size=args.crop_size, prototype=False, scale_encoding=args.scale_encoding, scale_bins=args.scale_bins)
-    elif args.dataset_type=='h5':
-        dataset = SAPCLIP_Dataset_H5(input_path=args.data_root, transform_type=args.transform_type , crop_size=args.crop_size)
-
+    
+    args.scale_ratio = str_to_frac(args.scale_ratio)
+    assert args.scale_ratio[0] + args.scale_ratio[1] + args.scale_ratio[2] == 1.0, 'Scale ratio should sum to 1'
+    dataset = SAPCLIP_Dataset(root=args.data_root, transform_type=args.transform_type,
+     crop_size=args.crop_size, prototype=False, scale_encoding=args.scale_encoding,
+      scale_bins=args.scale_bins, scale_ratio=args.scale_ratio)
     train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=args.batch_size,
      num_workers=args.num_workers, transform_type=args.transform_type)
     print('DataLoaders Initialized')
     #initialize model
-    if args.loss_type=='pcme' or args.loss_type=='pcme_uni':
-        print('Using PCME type loss')
+    if 'pcme' in args.loss_type or 'clip' in args.loss_type:
         if args.ckpt_path:
             print('Starting training from ckpt')
             SAPCLIP_PCME.load_from_checkpoint(args.ckpt_path)
         else:
             print('Starting fresh training')
-        sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
+            sapclip_model = SAPCLIP_PCME(embed_dim=args.embed_dim, loss_type=args.loss_type,
     vision_layers=args.vision_encoder, anneal_T=args.anneal_T,
     scale_encoding=args.scale_encoding, scale_bins=args.scale_bins,
-    satclip_pretrained=args.pretrained_satclip, early_fusion=args.early_fusion,num_t_layers=args.num_transformer_layers)
-    else:
+    satclip_pretrained=args.pretrained_satclip, early_fusion=args.early_fusion,
+    num_t_layers=args.num_transformer_layers)
+    elif args.loss_type=='probablistic':
         print('Using likelihood type loss')
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,
     anneal_T=args.anneal_T)
