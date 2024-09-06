@@ -7,6 +7,13 @@ class SatMAE(nn.Module):
         super().__init__()
         
         self.vision_model = Satmae.from_pretrained("MVRL/satmae-vitlarge-fmow-pretrain-800")
+        del self.vision_model.decoder_embed
+        del self.vision_model.mask_token
+        del self.vision_model.decoder_pos_embed
+        del self.vision_model.decoder_blocks
+        del self.vision_model.decoder_norm
+        del self.vision_model.decoder_pred
+
         self.projection_layer = nn.Linear(1024, embed_dim)
     def forward(self,x):
         batch_tensors = self.vision_model.forward_encoder(x, mask_ratio=0.0)[0]
