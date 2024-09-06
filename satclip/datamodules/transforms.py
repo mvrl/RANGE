@@ -136,7 +136,7 @@ def get_sapclip_transform(resize_crop_size=256):
     return transform 
 
 #get a single crop for each sample irrespective of scale
-def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scale_bins=3):
+def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scale_bins=3, scale_ratio=[1/3,1/3,1/3]):
     augmentation = T.Compose([
         T.RandomCrop(resize_crop_size),
         T.RandomVerticalFlip(),
@@ -162,7 +162,7 @@ def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scal
         image = sample['image']
         point = sample['point']
         # define the different scales
-        scale = np.random.choice([1, 3, 5], p=[0.5,0.3,0.2])
+        scale = np.random.choice([1, 3, 5], p=scale_ratio)
 
         #create the bounding box for the scale
         crop_size = 256*scale

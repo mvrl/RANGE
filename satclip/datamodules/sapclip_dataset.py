@@ -98,7 +98,8 @@ class SAPCLIP_Dataset(NonGeoDataset):
         mode: Optional[str] = "both",
         prototype: bool=False,
         scale_encoding: str='onehot',
-        scale_bins=3
+        scale_bins=3,
+        scale_ratio: list=[1/3,1/3,1/3]
     ) -> None:
         """Initialize a new S2-100K dataset instance.
         Args:
@@ -295,6 +296,7 @@ class SAPCLIP_Dataset(NonGeoDataset):
         self.root = root
         self.mode = mode
         self.transform_type = transform_type
+        self.scale_ratio = scale_ratio
         # if not self._check_integrity():
         #     raise RuntimeError("Dataset not found or corrupted.")
 
@@ -336,7 +338,8 @@ class SAPCLIP_Dataset(NonGeoDataset):
         elif transform_type=='sapclip':
             self.transform = get_sapclip_transform(resize_crop_size=crop_size)
         elif transform_type=='sapclip_uni':
-            self.transform = get_sapclip_uni_transform(resize_crop_size=crop_size, scale_encoding=scale_encoding, scale_bins=scale_bins)
+            self.transform = get_sapclip_uni_transform(resize_crop_size=crop_size,
+            scale_encoding=scale_encoding, scale_bins=scale_bins, scale_ratio=scale_ratio)
         else:
             print('No transform used')
             self.transform=None
@@ -473,14 +476,11 @@ class SAPCLIP_Dataset_H5(torch.utils.data.Dataset):
 if __name__ == '__main__':
     data_type='normal'
     transform_type = 'sapclip_uni'
-    if data_type=='h5':
-        print('H5')
-        path = '/scratch/a.dhakal/hyper_satclip/data/h5_data/satclip_data.h5'
-        dataset = SAPCLIP_Dataset_H5(input_path=path, transform_type='sapclip')
-    elif data_type=='normal':
-        print('Normal')
-        path = '/scratch/a.dhakal/hyper_satclip/data/satclip_data/satclip_sentinel/images'
-        dataset = SAPCLIP_Dataset(root=path, transform_type=transform_type, crop_size=224, prototype=False, scale_encoding='onehot', scale_bins=50)
+    scale_ratio = [1/2,1/2,0]
+    print('Normal')
+    path = '/projects/bdec/adhakal2/hyper_satclip/data/satclip_sentinel/images'
+    dataset = SAPCLIP_Dataset(root=path, transform_type=transform_type, crop_size=224, prototype=False, 
+    scale_encoding='onehot', scale_bins=50, scale_ratio=scale_ratio)
     
     train_loader, val_loader = get_split_dataset(dataset, val_split=0.05, batch_size=16,
      num_workers=0, transform_type=transform_type)
