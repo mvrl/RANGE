@@ -24,7 +24,7 @@ from .transforms import get_sapclip_transform, get_none_transform, get_sapclip_u
 
 CHECK_MIN_FILESIZE = 10000 # 10kb
 
-
+## the geolocation format is (lon,lat)
 def get_split_dataset(dataset, 
     val_split: float=0.1,
     batch_size: int=8,
