@@ -79,7 +79,7 @@ class SAPCLIP(L.LightningModule):
             sh_embedding_dims=sh_embedding_dims,
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
-            device='cuda',
+            device=self.device,
             loss_type=loss_type,
         )
         
@@ -206,7 +206,6 @@ class SAPCLIP_PCME(L.LightningModule):
             sh_embedding_dims=sh_embedding_dims,
             num_hidden_layers=num_hidden_layers,
             capacity=capacity,
-            device='cuda',
             loss_type=loss_type,
             scale_encoding=scale_encoding,
             scale_bins=scale_bins,
@@ -274,12 +273,12 @@ class SAPCLIP_PCME(L.LightningModule):
         return optimizer
     
     #define the forward pass
-    def forward(self, batch, batch_idx):      
+    def forward(self, batch):      
         loss, loss_dict = self.model(batch)
         return loss, loss_dict
 
     def training_step(self, batch, batch_idx):
-        loss, loss_dict = self(batch, batch_idx)
+        loss, loss_dict = self(batch)
         if self.loss_type=='clip':
             self.log('train_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
             self.log('logit_scale', loss_dict['logit_scale'], batch_size=len(batch), prog_bar=True, sync_dist=True)
@@ -289,7 +288,7 @@ class SAPCLIP_PCME(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss, loss_dict = self(batch, batch_idx)
+        loss, loss_dict = self(batch)
         if self.loss_type=='clip':
             self.log('val_loss', loss, batch_size=len(batch), prog_bar=True, sync_dist=True)
             self.log('logit_scale', loss_dict['logit_scale'], batch_size=len(batch), prog_bar=True, sync_dist=True)
@@ -392,6 +391,7 @@ def get_args():
     parser.add_argument('--strategy', type=str, default='ddp_find_unused_parameters_false')
     parser.add_argument('--accelerator', type=str, default='gpu')
     parser.add_argument('--devices', default=1)
+    parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--mode', type=str, default='dev')
     parser.add_argument('--accumulate_grad', type=int, default=16)
     parser.add_argument('--ckpt_path', type=str, default=None)
@@ -478,7 +478,7 @@ if __name__ == '__main__':
     vision_layers=args.vision_encoder, anneal_T=args.anneal_T,
     scale_encoding=args.scale_encoding, scale_bins=args.scale_bins,
     satclip_pretrained=args.pretrained_satclip, early_fusion=args.early_fusion,
-    num_t_layers=args.num_transformer_layers)
+    num_t_layers=args.num_transformer_layers, device=args.device)
     elif args.loss_type=='probablistic':
         print('Using likelihood type loss')
         sapclip_model = SAPCLIP(embed_dim=args.embed_dim, loss_type=args.loss_type,

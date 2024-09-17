@@ -6,7 +6,7 @@ import torchmetrics
 
 from sklearn.preprocessing import MinMaxScaler
 import argparse
-
+from einops import repeat
 #local import 
 from ..utils.load_model import load_checkpoint
 
@@ -36,21 +36,30 @@ class ClassificationNet(L.LightningModule):
         for param in self.location_encoder.parameters():
             param.requires_grad=False
         
-        self.linear = torch.nn.Linear(input_dims, output_dims)
+        self.linear = torch.nn.Linear(input_dims, output_dims).double()
         self.criterion = torch.nn.CrossEntropyLoss()
         self.acc = torchmetrics.Accuracy(task='multiclass', num_classes=output_dims)
         #save all values for acc calculation
         self.true_labels = []
         self.predicted_labels = []
         
-    def forward(self, x):
-        location_embeddings = self.location_encoder(x)
-        out = self.linear(location_embeddings)
+    def loc_encode(self, coords, scale=None):
+        if scale==None:
+            raise NotImplementedError('Only scale is implemented')
+        else:
+            loc_embeddings = self.location_encoder.encode_location(coords, scale)
+            
+        return loc_embeddings
+
+
+    def forward(self, coords, scale):
+        location_embeddings = self.loc_encode(coords, scale)
+        out = self.linear(location_embeddings[0])
         return out
 
     def shared_step(self, batch):
-        x,y = batch
-        y_hat = self(x)
+        coords, scale, y = batch
+        y_hat = self(coords, scale)
         loss = self.criterion(y_hat, y)
         return loss
 
@@ -83,11 +92,15 @@ class ClassificationNet(L.LightningModule):
 
 if __name__ == '__main__':
     args = get_args()
-    sapclip_model = load_checkpoint(args.ckpt_path)
-    model = ClassificationNet(sapclip_model, 256, 10)
-    import code; code.interact(local=dict(globals(), **locals()))
-    x = torch.rand(64, 256)
-    y = torch.randint(0, 10, (64,))
-    out = model((x,y))
+    sapclip_model = load_checkpoint(args.ckpt_path, 'cpu')
+    sapclip_encoder = sapclip_model.model.eval()
+    model = ClassificationNet(sapclip_encoder, 256, 10)
     
+    
+    coords = torch.rand(10, 2).double()
+    scale = torch.tensor([0,0,1]).double()
+    scale = repeat(scale, 'd -> b d', b=10).double()
+    out = model(coords, scale)
+    import code; code.interact(local=dict(globals(), **locals()))
+
    
