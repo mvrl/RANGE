@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 import torch
 import pandas as pd
 
+#srikumar
 class Biome_Dataset(Dataset):
     def __init__(self, data_path):
         self.data_path = data_path
@@ -22,6 +23,7 @@ class Biome_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+#srikumar
 class Eco_Dataset(Dataset):
     def __init__(self, data_path):
         self.data_path = data_path
@@ -41,6 +43,7 @@ class Eco_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+
 class Temp_Dataset(Dataset):
     def __init__(self, data_path):
         self.data_path = data_path
@@ -59,6 +62,7 @@ class Temp_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+#https://www.kaggle.com/datasets/camnugent/california-housing-prices
 class Housing_Dataset(Dataset):
     def __init__(self, data_path):
         self.data_path = data_path
@@ -77,6 +81,7 @@ class Housing_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+#https://codeocean.com/capsule/6456296/tree/v2
 class Elevation_Dataset(Dataset):
     def __init__(self, data_path):
         self.data_path = data_path
@@ -95,6 +100,7 @@ class Elevation_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+#https://codeocean.com/capsule/6456296/tree/v2
 class Population_Dataset(Dataset):
     def __init__(self, data_path):
         self.data_path = data_path
