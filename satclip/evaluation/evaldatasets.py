@@ -2,7 +2,8 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import torch
 import pandas as pd
-
+import os
+import numpy as np
 #srikumar
 class Biome_Dataset(Dataset):
     def __init__(self, data_path, scale):
@@ -10,7 +11,12 @@ class Biome_Dataset(Dataset):
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
-        self.df = pd.read_csv(data_path)
+        self.train_data_path = os.path.join(data_path,'ecoregion_train.csv')
+        self.val_data_path = os.path.join(data_path,'ecoregion_val.csv')
+        self.train_df = pd.read_csv(self.train_data_path)
+        self.val_df = pd.read_csv(self.val_data_path) 
+        #join the two dataframes
+        self.df = pd.concat([self.train_df,self.val_df])
         self.df.dropna(subset=['BIOME_NAME'],inplace=True)
         self.df.reset_index(drop=True, inplace=True)
 
@@ -33,8 +39,13 @@ class Eco_Dataset(Dataset):
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
-        self.df = pd.read_csv(data_path)
-        self.df.dropna(subset=['ECO_BIOME_'],inplace=True)
+        self.train_data_path = os.path.join(data_path,'ecoregion_train.csv')
+        self.val_data_path = os.path.join(data_path,'ecoregion_val.csv')
+        self.train_df = pd.read_csv(self.train_data_path)
+        self.val_df = pd.read_csv(self.val_data_path) 
+        #join the two dataframes
+        self.df = pd.concat([self.train_df,self.val_df])
+        self.df.dropna(subset=['ECO_NAME'],inplace=True)
         self.df.reset_index(drop=True, inplace=True)
 
         self.label, self.label_map = pd.factorize(self.df['ECO_NAME'])
@@ -136,7 +147,7 @@ class Population_Dataset(Dataset):
     def __getitem__(self, index):
         loc =  torch.from_numpy(self.loc[index]).double()
         label = torch.tensor(self.label[index]).double()
-        return loc,self.curr_scale,label        
+        return loc,self.curr_scale,np.log(1+label)        
 
     def __len__(self):
         return len(self.label)
