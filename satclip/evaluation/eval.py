@@ -6,18 +6,29 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 import torchmetrics
 from huggingface_hub import hf_hub_download
-
 from torch.utils.data import random_split, DataLoader
+
+import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.linear_model import RidgeClassifierCV, RidgeCV
+
 import argparse
 from einops import repeat
 import os
+from tqdm import tqdm 
+import sys
 #local import 
 from ..utils.load_model import load_checkpoint
 from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset
 #loading different location models
 from ..load import get_satclip
 from geoclip import LocationEncoder as GeoCLIP #input as lat,long
+
+import warnings
+
+# Suppress all FutureWarnings
+warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=FutureWarning, module="kornia.feature.lightglue")
 
 def get_args():
     parser = argparse.ArgumentParser(description='code for evaluating the embeddings')
@@ -41,31 +52,115 @@ def get_args():
     parser.add_argument('--wandb_mode', type=str, help='Mode of wandb', default='online')
     
     #downstream model argumetns
-    parser.add_argument('--device', type=str, help='Device to run the model', default='cuda')
     parser.add_argument('--max_epochs', type=int, default=200)
     parser.add_argument('--accelerator', type=str, default='gpu')
     parser.add_argument('--dev_run', action='store_true', help='Run the model in dev mode')
     parser.add_argument('--learning_rate', type=float, default=1e-03)
-    # parser.add_argument('--devices', default=1)
+    #saving embeddings
+    parser.add_argument('--embeddings_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data/embeddings')
+    #eval type
+    parser.add_argument('--eval_type', type=str, default='evaluate_npz', choices=['save_embeddings', 'evaluate_raw', 'evaluate_npz'])
     args = parser.parse_args()
 
     return args
 
-#get the approp
+def save_embeddings(args, train_loader, val_loader, location_model):
+    feature_dim = location_model.location_feature_dim
+    embeddings_dir = os.path.join(args.embeddings_dir, args.location_model_name)
+    #check if directory already exist for this model
+    if not os.path.exists(embeddings_dir):
+        print(f'Creating new directory {embeddings_dir}')
+        os.makedirs(embeddings_dir)
+    #create train and val path
+    train_path = os.path.join(embeddings_dir, f'{args.task_name}_train.npz')
+    val_path = os.path.join(embeddings_dir, f'{args.task_name}_val.npz')
+    #freeze the model
+    location_model.eval()
+    with torch.no_grad():
+        #first get the embeddings for the train data
+        coords_list = []
+        scale_list = []
+        embeddings_list = []
+        y_list = []
+        for i, data in tqdm(enumerate(train_loader)):
+            coords, scale, y = data
+            coords = coords.to(args.device)
+            scale = scale.to(args.device)
+            location_embeddings = location_model(coords, scale).cpu().numpy()
+            scale = scale.cpu().numpy()
+            coords = coords.cpu().numpy()
+            y = y.cpu().numpy()
+            coords_list.append(coords)
+            scale_list.append(scale)
+            embeddings_list.append(location_embeddings)
+            y_list.append(y)
+        #save the embeddings
+        np.savez(train_path, coords=np.concatenate(coords_list, axis=0), scale=np.concatenate(scale_list, axis=0), embeddings=np.concatenate(embeddings_list, axis=0), y=np.concatenate(y_list, axis=0))
+        print(f'File saved to {train_path}')
+        #reset the lists
+        coords_list = []
+        scale_list = []
+        embeddings_list = []
+        y_list = []
+        #compute embeddings for validation data
+        for i, data in tqdm(enumerate(val_loader)):
+            coords, scale, y = data
+            coords = coords.to(args.device)
+            scale = scale.to(args.device)
+            location_embeddings = location_model(coords, scale).cpu().numpy()
+            scale = scale.cpu().numpy()
+            coords = coords.cpu().numpy()
+            y = y.cpu().numpy()
+            coords_list.append(coords)
+            scale_list.append(scale)
+            embeddings_list.append(location_embeddings)
+            y_list.append(y)
+        #save the embeddings
+        np.savez(val_path, coords=np.concatenate(coords_list, axis=0), scale=np.concatenate(scale_list, axis=0), embeddings=np.concatenate(embeddings_list, axis=0), y=np.concatenate(y_list, axis=0))
+        print(f'File saved to {train_path} and {val_path}')
+
+def evaluate_npz(args):
+    train_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_train.npz')
+    val_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_val.npz')
+    assert os.path.exists(train_path), f'Train embeddings file does not exist: {train_path}'
+    assert os.path.exists(val_path), f'Val embeddings file does not exist: {val_path}'
+    #get training data
+    train_data = np.load(train_path)
+    train_embeddings = train_data['embeddings']
+    train_labels = train_data['y']
+    #get validation data
+    val_data = np.load(val_path)
+    val_embeddings = val_data['embeddings']
+    val_labels = val_data['y']
+    #decide the model
+    if args.task_name == 'ecoregion' or args.task_name == 'biome':
+        print('Classification Model')
+        clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
+    else:
+        print('Regression Model')
+        clf = RidgeCV(alphas=(0.1, 1.0, 10.0), cv=10)
+    #normalize the embeddings
+    scaler = MinMaxScaler()
+    train_embeddings = scaler.fit_transform(train_embeddings)
+    val_embeddings = scaler.transform(val_embeddings)
+    #run the classifier
+    clf.fit(val_embeddings, val_labels)
+    val_accuracy = clf.score(val_embeddings, val_labels)
+    print(f'The validation set accuracy is {val_accuracy}')
+    return val_accuracy
+
 def get_dataset(args):
     generator = torch.Generator().manual_seed(42)
     if args.task_name == 'biome':
-        data_path_train = os.path.join(args.eval_dir, 'ecoregion_train.csv')
-        data_path_val = os.path.join(args.eval_dir, 'ecoregion_val.csv')
-        dataset_train = Biome_Dataset(data_path_train, args.scale)
-        dataset_val = Biome_Dataset(data_path_val, args.scale)
-        num_classes = dataset_train.num_classes
+        data_path = args.eval_dir
+        dataset = Biome_Dataset(data_path, args.scale)
+        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
+        num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'ecoregion':
-        data_path_train = os.path.join(args.eval_dir, 'ecoregion_train.csv')
-        data_path_val = os.path.join(args.eval_dir, 'ecoregion_val.csv')
-        dataset_train = Eco_Dataset(data_path_train, args.scale)
-        dataset_val = Eco_Dataset(data_path_val, args.scale)
-        num_classes = dataset_train.num_classes
+        data_path = args.eval_dir
+        dataset = Eco_Dataset(data_path, args.scale)
+        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
+        num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'temperature':
         data_path = os.path.join(args.eval_dir, 'temp.csv')
         dataset = Temp_Dataset(data_path, args.scale)
@@ -112,6 +207,13 @@ class LocationEncoder(nn.Module):
             print('Using GeoCLIP')
             self.loc_model = GeoCLIP().double()
             self.location_feature_dim = 512
+        elif self.location_model_name == 'TaxaBind':
+            print('Using TaxaBind')
+            self.loc_model = GeoCLIP().double()
+            ckpt = torch.load('/projects/bdec/adhakal2/hyper_satclip/data/models/patched_location_encoder.pt', map_location=args.device)
+            self.loc_model.load_state_dict(ckpt)
+            self.location_feature_dim = 512
+
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
 
@@ -122,6 +224,9 @@ class LocationEncoder(nn.Module):
         elif self.location_model_name == 'SatCLIP':
             loc_embeddings = self.loc_model(coords)
         elif self.location_model_name == 'GeoCLIP':
+            coords = coords[:,[1,0]]
+            loc_embeddings = self.loc_model(coords)
+        elif self.location_model_name == 'TaxaBind':
             coords = coords[:,[1,0]]
             loc_embeddings = self.loc_model(coords)
         else:
@@ -180,7 +285,7 @@ class RegressionNet(L.LightningModule):
         predicted_labels = torch.cat(self.predicted_labels)
         true_labels = torch.cat(self.true_labels)
         # acc = self.acc(predicted_labels, true_labels)
-        acc = 1-((predicted_labels - true_labels).pow(2).sum() / ((true_labels - true_labels.mean()).pow(2).sum() + 1e-8)
+        acc = 1-((predicted_labels - true_labels).pow(2).sum() / ((true_labels - true_labels.mean()).pow(2).sum() + 1e-8))
         loss = self.criterion(predicted_labels, true_labels)
         self.log('val_acc', acc, prog_bar=True)
         self.log('mse_loss', loss, prog_bar=True)
@@ -250,6 +355,11 @@ class ClassificationNet(L.LightningModule):
 
 if __name__ == '__main__':
     args = get_args()
+    #set device
+    if args.accelerator == 'gpu':
+        args.device = 'cuda'
+    elif args.accelerator == 'cpu':
+        args.device = 'cpu'
     
     #initialize the pretrained location model
     location_model = LocationEncoder(args)
@@ -257,38 +367,48 @@ if __name__ == '__main__':
     location_feature_dim = location_model.location_feature_dim
     #initialize the dataset
     train_loader, val_loader, num_classes = get_dataset(args)
-    #find the number of classes and type
-    if num_classes == 0:
-        donwstream_task = 'regression'
-        model = RegressionNet(location_model, location_feature_dim)
-    else:
-        downstream_task = 'classification'
-        model = ClassificationNet(location_model, location_feature_dim, num_classes)
+    #precompute embeddings and save them
+    if args.eval_type == 'save_embeddings':
+        print('Saving npz files for embeddings...')
+        save_embeddings(args,train_loader, val_loader,location_model)
+        train_path = os.path.join(args.eval_dir, 'train_embeddings.npz')
     
-    #initialize the logger
-    wandb_logger = WandbLogger(save_dir=args.log_dir, project=args.project_name,
-     name=args.run_name, mode=args.wandb_mode)
-    #initialize the checkpoint callback
-    checkpoint_callback = ModelCheckpoint(monitor='val_acc', filename='{epoch}_{val_acc:.3f}', save_top_k=3, mode='max', save_last=True)
-    #initialize the trainer
-    if args.dev_run:
-        print('Running Dev Mode!')
-        trainer = L.Trainer(fast_dev_run=15, precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
-            num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1)
-    else:
-        print('Running Full Training!')
-        trainer = L.Trainer(precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
-            num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1,
-            logger=wandb_logger, callbacks=[checkpoint_callback], log_every_n_steps=1)
+    #run the eval for precomputed embeddings
+    elif args.eval_type == 'evaluate_npz':
+        print('Evaluating embeddings from precomputed npz files')
+        acc = evaluate_npz(args)
+        print(f'Accuracy: {acc}')
+        sys.stderr.write(f'Accuracy: {acc}')
 
-    trainer.fit(model, train_loader, val_loader)
+    #run the model on raw data
+    elif args.eval_type == 'evaluate_raw':
+        print('Evaluating embeddings from raw data')
+        if num_classes == 0:
+            donwstream_task = 'regression'
+            model = RegressionNet(location_model, location_feature_dim)
+        
+            downstream_task = 'classification'
+            model = ClassificationNet(location_model, location_feature_dim, num_classes)
+        
+        #initialize the logger
+        wandb_logger = WandbLogger(save_dir=args.log_dir, project=args.project_name,
+        name=args.run_name, mode=args.wandb_mode)
+        #initialize the checkpoint callback
+        checkpoint_callback = ModelCheckpoint(monitor='val_acc', filename='{epoch}_{val_acc:.3f}', save_top_k=3, mode='max', save_last=True)
+        #initialize the trainer
+        if args.dev_run:
+            print('Running Dev Mode!')
+            trainer = L.Trainer(fast_dev_run=15, precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
+                num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1)
+        else:
+            print('Running Full Training!')
+            trainer = L.Trainer(precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
+                num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1,
+                logger=wandb_logger, callbacks=[checkpoint_callback], log_every_n_steps=1)
+
+        trainer.fit(model, train_loader, val_loader)
     
-    # #randomly generate some data
-    # coords = torch.rand(10, 2).double()
-    # scale = torch.tensor([0,0,1]).double()
-    # scale = repeat(scale, 'd -> b d', b=10).double()
-    # import code; code.interact(local=dict(globals(), **locals()))
-    # out = model(coords, scale)
+
     
 
    
