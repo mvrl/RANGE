@@ -5,6 +5,8 @@ import torch.nn.functional as F
 from lightning.pytorch.loggers import WandbLogger 
 from lightning.pytorch.callbacks import ModelCheckpoint
 import torchmetrics
+from huggingface_hub import hf_hub_download
+
 from torch.utils.data import random_split, DataLoader
 from sklearn.preprocessing import MinMaxScaler
 import argparse
@@ -13,7 +15,9 @@ import os
 #local import 
 from ..utils.load_model import load_checkpoint
 from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset
-
+#loading different location models
+from ..load import get_satclip
+from geoclip import LocationEncoder as GeoCLIP #input as lat,long
 
 def get_args():
     parser = argparse.ArgumentParser(description='code for evaluating the embeddings')
@@ -38,9 +42,10 @@ def get_args():
     
     #downstream model argumetns
     parser.add_argument('--device', type=str, help='Device to run the model', default='cuda')
-    parser.add_argument('--max_epochs', type=int, default=100)
+    parser.add_argument('--max_epochs', type=int, default=200)
     parser.add_argument('--accelerator', type=str, default='gpu')
     parser.add_argument('--dev_run', action='store_true', help='Run the model in dev mode')
+    parser.add_argument('--learning_rate', type=float, default=1e-03)
     # parser.add_argument('--devices', default=1)
     args = parser.parse_args()
 
@@ -84,8 +89,8 @@ def get_dataset(args):
     else:
         raise ValueError('Task name not recognized')
     
-    train_loader = DataLoader(dataset_train, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True)
-    val_loader = DataLoader(dataset_val, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False)
+    train_loader = DataLoader(dataset_train, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, drop_last=False)
+    val_loader = DataLoader(dataset_val, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False, drop_last=False)
     return train_loader, val_loader, num_classes
 
 class LocationEncoder(nn.Module):
@@ -94,7 +99,19 @@ class LocationEncoder(nn.Module):
         self.location_model_name = args.location_model_name
         #get the appropriate model
         if self.location_model_name == 'SAPCLIP':
+            print('Using SAPCLIP')
             self.loc_model = load_checkpoint(args.ckpt_path, args.device).model.eval()
+            self.location_feature_dim = 256
+        elif self.location_model_name == 'SatCLIP':
+            print('Using SatCLIP')
+            self.loc_model = get_satclip(
+                    hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
+                device=args.device).double()
+            self.location_feature_dim = 256  
+        elif self.location_model_name == 'GeoCLIP':
+            print('Using GeoCLIP')
+            self.loc_model = GeoCLIP().double()
+            self.location_feature_dim = 512
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
 
@@ -102,6 +119,11 @@ class LocationEncoder(nn.Module):
     def forward(self, coords, scale):
         if self.location_model_name == 'SAPCLIP':
             loc_embeddings = self.loc_model.encode_location(coords, scale)[0]
+        elif self.location_model_name == 'SatCLIP':
+            loc_embeddings = self.loc_model(coords)
+        elif self.location_model_name == 'GeoCLIP':
+            coords = coords[:,[1,0]]
+            loc_embeddings = self.loc_model(coords)
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
         return loc_embeddings
@@ -118,7 +140,8 @@ class RegressionNet(L.LightningModule):
         for param in self.location_encoder.parameters():
             param.requires_grad=False
         
-        self.linear = torch.nn.Linear(input_dims, 1).double()
+        self.hidden = torch.nn.Linear(input_dims, 256).double()
+        self.linear = torch.nn.Linear(256, 1).double()
         self.criterion = torch.nn.MSELoss(reduction='mean')
         self.acc = torchmetrics.R2Score()
         #save all values for acc calculation
@@ -128,7 +151,8 @@ class RegressionNet(L.LightningModule):
 
     def forward(self, coords, scale):
         location_embeddings = self.location_encoder(coords, scale)
-        out = self.linear(location_embeddings)
+        inter = torch.nn.functional.leaky_relu(self.hidden(location_embeddings))
+        out = self.linear(inter)
         return out
 
     def shared_step(self, batch):
@@ -155,7 +179,8 @@ class RegressionNet(L.LightningModule):
     def on_validation_epoch_end(self):
         predicted_labels = torch.cat(self.predicted_labels)
         true_labels = torch.cat(self.true_labels)
-        acc = self.acc(predicted_labels, true_labels)
+        # acc = self.acc(predicted_labels, true_labels)
+        acc = 1-((predicted_labels - true_labels).pow(2).sum() / ((true_labels - true_labels.mean()).pow(2).sum() + 1e-8)
         loss = self.criterion(predicted_labels, true_labels)
         self.log('val_acc', acc, prog_bar=True)
         self.log('mse_loss', loss, prog_bar=True)
@@ -176,7 +201,8 @@ class ClassificationNet(L.LightningModule):
         for param in self.location_encoder.parameters():
             param.requires_grad=False
         
-        self.linear = torch.nn.Linear(input_dims, num_classes).double()
+        self.hidden = torch.nn.Linear(input_dims, 256).double()
+        self.linear = torch.nn.Linear(256, num_classes).double()
         self.criterion = torch.nn.CrossEntropyLoss()
         self.acc = torchmetrics.Accuracy(task='multiclass', num_classes=num_classes)
         #save all values for acc calculation
@@ -186,7 +212,8 @@ class ClassificationNet(L.LightningModule):
 
     def forward(self, coords, scale):
         location_embeddings = self.location_encoder(coords, scale)
-        out = self.linear(location_embeddings)
+        inter = torch.nn.functional.leaky_relu(self.hidden(location_embeddings))
+        out = self.linear(inter)
         return out
 
     def shared_step(self, batch):
@@ -218,28 +245,31 @@ class ClassificationNet(L.LightningModule):
         self.log('val_acc', acc, prog_bar=True)
     
     def configure_optimizers(self):
-        return torch.optim.Adam(self.linear.parameters(), lr=1e-3)
+        return torch.optim.Adam(self.linear.parameters(), lr=args.learning_rate)
 
 
 if __name__ == '__main__':
     args = get_args()
+    
     #initialize the pretrained location model
     location_model = LocationEncoder(args)
+    #get the output dimension of the location model
+    location_feature_dim = location_model.location_feature_dim
     #initialize the dataset
     train_loader, val_loader, num_classes = get_dataset(args)
     #find the number of classes and type
     if num_classes == 0:
         donwstream_task = 'regression'
-        model = RegressionNet(location_model, 256)
+        model = RegressionNet(location_model, location_feature_dim)
     else:
         downstream_task = 'classification'
-        model = ClassificationNet(location_model, 256, num_classes)
+        model = ClassificationNet(location_model, location_feature_dim, num_classes)
     
     #initialize the logger
     wandb_logger = WandbLogger(save_dir=args.log_dir, project=args.project_name,
-     name=f'{args.location_model_name}_{args.task_name}',mode=args.wandb_mode)
+     name=args.run_name, mode=args.wandb_mode)
     #initialize the checkpoint callback
-    checkpoint_callback = ModelCheckpoint(monitor='val_acc', filename='{epoch}_{val_acc}:.3f', save_top_k=3, mode='max', save_last=True)
+    checkpoint_callback = ModelCheckpoint(monitor='val_acc', filename='{epoch}_{val_acc:.3f}', save_top_k=3, mode='max', save_last=True)
     #initialize the trainer
     if args.dev_run:
         print('Running Dev Mode!')
@@ -249,7 +279,7 @@ if __name__ == '__main__':
         print('Running Full Training!')
         trainer = L.Trainer(precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
             num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1,
-            logger=wandb_logger, callbacks=[checkpoint_callback])
+            logger=wandb_logger, callbacks=[checkpoint_callback], log_every_n_steps=1)
 
     trainer.fit(model, train_loader, val_loader)
     
