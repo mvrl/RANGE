@@ -13,7 +13,7 @@ class Biome_Dataset(Dataset):
 
         self.label, self.label_map = pd.factorize(self.df['BIOME_NAME'])
         self.loc = self.df[['X', 'Y']].values
-        self.num_label = self.df['BIOME_NAME'].nunique() 
+        self.num_classes = self.df['BIOME_NAME'].nunique() 
 
     def __getitem__(self, index):
         loc =  torch.from_numpy(self.loc[index]).double()
@@ -33,7 +33,7 @@ class Eco_Dataset(Dataset):
 
         self.label, self.label_map = pd.factorize(self.df['ECO_BIOME_'])
         self.loc = self.df[['X', 'Y']].values
-        self.num_label = self.df['ECO_BIOME_'].nunique() 
+        self.num_classes = self.df['ECO_BIOME_'].nunique() 
 
     def __getitem__(self, index):
         loc =  torch.from_numpy(self.loc[index]).double()
@@ -53,6 +53,7 @@ class Temp_Dataset(Dataset):
 
         self.loc = self.df[['Lon', 'Lat']].values
         self.label = self.df['meanT']
+        self.num_classes = 0
 
     def __getitem__(self, index):
         loc =  torch.from_numpy(self.loc[index]).double()
@@ -72,6 +73,7 @@ class Housing_Dataset(Dataset):
 
         self.loc = self.df[['longitude', 'latitude']].values
         self.label = self.df['median_house_value']
+        self.num_classes = 0
 
     def __getitem__(self, index):
         loc =  torch.from_numpy(self.loc[index]).double()
@@ -91,6 +93,7 @@ class Elevation_Dataset(Dataset):
 
         self.loc = self.df[['lon', 'lat']].values
         self.label = self.df['elevation']
+        self.num_classes = 0
         
     def __getitem__(self, index):
         loc =  torch.from_numpy(self.loc[index]).double()
@@ -110,6 +113,7 @@ class Population_Dataset(Dataset):
 
         self.loc = self.df[['lon', 'lat']].values
         self.label = self.df['population']
+        self.num_classes = 0
 
     def __getitem__(self, index):
         loc =  torch.from_numpy(self.loc[index]).double()

@@ -450,7 +450,7 @@ if __name__ == '__main__':
         callbacks=[*ckpt_monitors, lr_logger])
     elif args.mode == 'train':
         print('Training Run')
-        trainer = L.Trainer(precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy=args.strategy, 
+        trainer = L.Trainer(precision='64', max_epochs=args.max_epochs, logger=wb_logger, strategy=args.strategy, 
         num_sanity_val_steps=1, accelerator=args.accelerator, devices=args.devices, 
         callbacks=[*ckpt_monitors, lr_logger], check_val_every_n_epoch=1, 
         log_every_n_steps=1, accumulate_grad_batches=args.accumulate_grad)
