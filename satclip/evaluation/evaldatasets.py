@@ -8,6 +8,7 @@ class Biome_Dataset(Dataset):
     def __init__(self, data_path, scale):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
         self.df = pd.read_csv(data_path)
         self.df.dropna(subset=['BIOME_NAME'],inplace=True)
@@ -30,14 +31,15 @@ class Eco_Dataset(Dataset):
     def __init__(self, data_path, scale):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
         self.df = pd.read_csv(data_path)
         self.df.dropna(subset=['ECO_BIOME_'],inplace=True)
         self.df.reset_index(drop=True, inplace=True)
 
-        self.label, self.label_map = pd.factorize(self.df['ECO_BIOME_'])
+        self.label, self.label_map = pd.factorize(self.df['ECO_NAME'])
         self.loc = self.df[['X', 'Y']].values
-        self.num_classes = self.df['ECO_BIOME_'].nunique() 
+        self.num_classes = self.df['ECO_NAME'].nunique() 
 
     def __getitem__(self, index):
         loc =  torch.from_numpy(self.loc[index]).double()
@@ -52,6 +54,7 @@ class Temp_Dataset(Dataset):
     def __init__(self, data_path, scale):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
         self.df = pd.read_csv(data_path)
         self.df.dropna(subset=['meanT'],inplace=True)
@@ -74,6 +77,7 @@ class Housing_Dataset(Dataset):
     def __init__(self, data_path, scale):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
         self.df = pd.read_csv(data_path)
         self.df.dropna(subset=['median_house_value'],inplace=True)
@@ -96,6 +100,7 @@ class Elevation_Dataset(Dataset):
     def __init__(self, data_path, scale):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
         self.df = pd.read_csv(data_path)
         self.df.dropna(subset=['elevation'],inplace=True)
@@ -118,6 +123,7 @@ class Population_Dataset(Dataset):
     def __init__(self, data_path, scale):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
         self.df = pd.read_csv(data_path)
         self.df.dropna(subset=['population'],inplace=True)
