@@ -21,20 +21,26 @@ def get_args():
     parser.add_argument('--ckpt_path', type=str, help='Path to the pretrained model',
     default='/projects/bdec/adhakal2/hyper_satclip/logs/SAPCLIP/0tflzztx/checkpoints/epoch=162-acc_eco=0.000.ckpt')
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SAPCLIP')
+    
     #dataset arguments
-    parser.add_argument('--task_name', type=str, help='Name of the task', default='population')
+    parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
+                        choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population'])
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
+    parser.add_argument('--scale', type=int, help='Scale for the location', choices=[0,1,3,5], default=0)
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
     parser.add_argument('--num_workers', type=int, help='Number of workers', default=6)
+    
     #logging arguments
     parser.add_argument('--log_dir', type=str, help='Path to the log directory', default='/projects/bdec/adhakal2/hyper_satclip/logs/downstream')
     parser.add_argument('--run_name', type=str, help='Name of the run', default='downstream_eval')
     parser.add_argument('--project_name', type=str, help='Name of the project', default='Donwstream Evaluation')
     parser.add_argument('--wandb_mode', type=str, help='Mode of wandb', default='online')
+    
     #downstream model argumetns
     parser.add_argument('--device', type=str, help='Device to run the model', default='cuda')
     parser.add_argument('--max_epochs', type=int, default=100)
     parser.add_argument('--accelerator', type=str, default='gpu')
+    parser.add_argument('--dev_run', action='store_true', help='Run the model in dev mode')
     # parser.add_argument('--devices', default=1)
     args = parser.parse_args()
 
@@ -46,33 +52,33 @@ def get_dataset(args):
     if args.task_name == 'biome':
         data_path_train = os.path.join(args.eval_dir, 'ecoregion_train.csv')
         data_path_val = os.path.join(args.eval_dir, 'ecoregion_val.csv')
-        dataset_train = Biome_Dataset(data_path_train)
-        dataset_val = Biome_Dataset(data_path_val)
+        dataset_train = Biome_Dataset(data_path_train, args.scale)
+        dataset_val = Biome_Dataset(data_path_val, args.scale)
         num_classes = dataset_train.num_classes
     elif args.task_name == 'ecoregion':
         data_path_train = os.path.join(args.eval_dir, 'ecoregion_train.csv')
         data_path_val = os.path.join(args.eval_dir, 'ecoregion_val.csv')
-        dataset_train = Eco_Dataset(data_path_train)
-        dataset_val = Eco_Dataset(data_path_val)
+        dataset_train = Eco_Dataset(data_path_train, args.scale)
+        dataset_val = Eco_Dataset(data_path_val, args.scale)
         num_classes = dataset_train.num_classes
     elif args.task_name == 'temperature':
         data_path = os.path.join(args.eval_dir, 'temp.csv')
-        dataset = Temp_Dataset(data_path)
+        dataset = Temp_Dataset(data_path, args.scale)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'housing':
         data_path = os.path.join(args.eval_dir, 'housing.csv')
-        dataset = Housing_Dataset(data_path)
+        dataset = Housing_Dataset(data_path, args.scale)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'elevation':
         data_path = os.path.join(args.eval_dir, 'elevation.csv')
-        dataset = Elevation_Dataset(data_path)
+        dataset = Elevation_Dataset(data_path, args.scale)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'population':
         data_path = os.path.join(args.eval_dir, 'population.csv')
-        dataset = Population_Dataset(data_path)
+        dataset = Population_Dataset(data_path, args.scale)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     else:
@@ -127,7 +133,7 @@ class RegressionNet(L.LightningModule):
 
     def shared_step(self, batch):
         coords, scale, y = batch
-        y_hat = self(coords, scale)
+        y_hat = torch.squeeze(self(coords, scale))
         loss = self.criterion(y_hat, y)
         return loss
 
@@ -136,9 +142,9 @@ class RegressionNet(L.LightningModule):
         self.log('train_loss', loss, prog_bar=True)
         return loss
     
-    def val_loss(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx):
         coords, scale, y = batch
-        y_hat = self(coords, scale)
+        y_hat = torch.squeeze(self(coords, scale))
         loss = self.criterion(y_hat, y)
         self.log('val_loss', loss, prog_bar=True)
         #save all values for acc calculation
@@ -150,7 +156,9 @@ class RegressionNet(L.LightningModule):
         predicted_labels = torch.cat(self.predicted_labels)
         true_labels = torch.cat(self.true_labels)
         acc = self.acc(predicted_labels, true_labels)
+        loss = self.criterion(predicted_labels, true_labels)
         self.log('val_acc', acc, prog_bar=True)
+        self.log('mse_loss', loss, prog_bar=True)
     
     def configure_optimizers(self):
         return torch.optim.Adam(self.linear.parameters(), lr=1e-3)
@@ -192,7 +200,7 @@ class ClassificationNet(L.LightningModule):
         self.log('train_loss', loss, prog_bar=True)
         return loss
     
-    def val_loss(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx):
         coords, scale, y = batch
         y_hat = self(coords, scale)
         loss = self.criterion(y_hat, y)
@@ -233,18 +241,24 @@ if __name__ == '__main__':
     #initialize the checkpoint callback
     checkpoint_callback = ModelCheckpoint(monitor='val_acc', filename='{epoch}_{val_acc}:.3f', save_top_k=3, mode='max', save_last=True)
     #initialize the trainer
-    trainer = L.Trainer(precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
-    num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1,
-    logger=wandb_logger, callbacks=[checkpoint_callback])
+    if args.dev_run:
+        print('Running Dev Mode!')
+        trainer = L.Trainer(fast_dev_run=15, precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
+            num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1)
+    else:
+        print('Running Full Training!')
+        trainer = L.Trainer(precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
+            num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1,
+            logger=wandb_logger, callbacks=[checkpoint_callback])
 
     trainer.fit(model, train_loader, val_loader)
     
-    #randomly generate some data
-    coords = torch.rand(10, 2).double()
-    scale = torch.tensor([0,0,1]).double()
-    scale = repeat(scale, 'd -> b d', b=10).double()
-    import code; code.interact(local=dict(globals(), **locals()))
-    out = model(coords, scale)
+    # #randomly generate some data
+    # coords = torch.rand(10, 2).double()
+    # scale = torch.tensor([0,0,1]).double()
+    # scale = repeat(scale, 'd -> b d', b=10).double()
+    # import code; code.interact(local=dict(globals(), **locals()))
+    # out = model(coords, scale)
     
 
    
