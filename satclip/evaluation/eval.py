@@ -27,8 +27,7 @@ from geoclip import LocationEncoder as GeoCLIP #input as lat,long
 import warnings
 
 # Suppress all FutureWarnings
-warnings.filterwarnings("ignore")
-warnings.filterwarnings("ignore", category=FutureWarning, module="kornia.feature.lightglue")
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 def get_args():
     parser = argparse.ArgumentParser(description='code for evaluating the embeddings')
@@ -72,8 +71,8 @@ def save_embeddings(args, train_loader, val_loader, location_model):
         print(f'Creating new directory {embeddings_dir}')
         os.makedirs(embeddings_dir)
     #create train and val path
-    train_path = os.path.join(embeddings_dir, f'{args.task_name}_train.npz')
-    val_path = os.path.join(embeddings_dir, f'{args.task_name}_val.npz')
+    train_path = os.path.join(embeddings_dir, f'{args.task_name}_scale-{args.scale}_train.npz')
+    val_path = os.path.join(embeddings_dir, f'{args.task_name}_scale-{args.scale}_val.npz')
     #freeze the model
     location_model.eval()
     with torch.no_grad():
@@ -120,8 +119,8 @@ def save_embeddings(args, train_loader, val_loader, location_model):
         print(f'File saved to {train_path} and {val_path}')
 
 def evaluate_npz(args):
-    train_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_train.npz')
-    val_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_val.npz')
+    train_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_scale-'+str(args.scale)+'_train.npz')
+    val_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_scale-'+str(args.scale)+'_val.npz')
     assert os.path.exists(train_path), f'Train embeddings file does not exist: {train_path}'
     assert os.path.exists(val_path), f'Val embeddings file does not exist: {val_path}'
     #get training data
