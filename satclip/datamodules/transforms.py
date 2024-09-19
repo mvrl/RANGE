@@ -136,7 +136,8 @@ def get_sapclip_transform(resize_crop_size=256):
     return transform 
 
 #get a single crop for each sample irrespective of scale
-def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scale_bins=3, scale_ratio=[1/3,1/3,1/3]):
+def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scale_bins=3, 
+            scale_ratio=[1/3,1/3,1/3], crop_type='resized'):
     augmentation = T.Compose([
         T.RandomCrop(resize_crop_size),
         T.RandomVerticalFlip(),
@@ -144,7 +145,14 @@ def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scal
         T.GaussianBlur(3),
         T.ToTensor()
     ])
-    
+    crop_type = crop_type
+    if crop_type == 'resized':
+        print('Getting sammples for different scales by resizing')
+    elif crop_type == 'sampled':
+        print('Getting samples for different scales by sampling')
+    else:
+        raise ValueError('Invalid crop type')
+
     if scale_encoding == 'onehot':
         map_scale = {1:torch.tensor([1,0,0]), 3:torch.tensor([0,1,0]), 5:torch.tensor([0,0,1])}
     elif scale_encoding == 'ple':
@@ -170,8 +178,11 @@ def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scal
         #center crop image for the given scale
         big_image = T.CenterCrop(size=crop_size)(image)
 
-        #create crops for the given scale 
-        cropped_image = T.RandomCrop(256)(big_image)
+        #create crops for the given scale
+        if crop_type == 'sampled':
+            cropped_image = T.RandomCrop(256)(big_image)
+        elif crop_type == 'resized':
+            cropped_image = T.Resize(256)(big_image)
         cropped_image = augmentation(cropped_image)
         #jitter the point
         point = coordinate_jitter(point)
