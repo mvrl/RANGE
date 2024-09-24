@@ -43,7 +43,7 @@ def get_args():
     parser.add_argument('--scale', type=int, help='Scale for the location', choices=[0,1,3,5], default=0)
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
     parser.add_argument('--num_workers', type=int, help='Number of workers', default=6)
-    
+
     #logging arguments
     parser.add_argument('--log_dir', type=str, help='Path to the log directory', default='/projects/bdec/adhakal2/hyper_satclip/logs/downstream')
     parser.add_argument('--run_name', type=str, help='Name of the run', default='downstream_eval')
@@ -182,7 +182,6 @@ def get_dataset(args):
         num_classes = dataset_train.dataset.num_classes
     else:
         raise ValueError('Task name not recognized')
-    
     train_loader = DataLoader(dataset_train, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, drop_last=False)
     val_loader = DataLoader(dataset_val, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False, drop_last=False)
     return train_loader, val_loader, num_classes

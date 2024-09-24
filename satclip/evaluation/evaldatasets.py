@@ -154,7 +154,8 @@ class Population_Dataset(Dataset):
     
 
 if __name__ == '__main__':
-    biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/ecoregion_train.csv'
+
+    biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
     biome_dataset = Biome_Dataset(biome_data_path, scale=1)
     temp_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/temp.csv'
     temp_dataset = Temp_Dataset(temp_data_path,scale=3)
@@ -168,5 +169,18 @@ if __name__ == '__main__':
     population_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/population.csv'
     population_dataset = Population_Dataset(population_data_path, scale=0)
     import code; code.interact(local=dict(globals(), **locals()))
+##### test #########
+import pandas as pd
+lats = []
+lons = []
+labels = []
+for i, data in enumerate(dataset_val):
+    loc, scale, label = data
+    lat = loc[1].cpu().numpy()
+    lon = loc[0].cpu().numpy()
+    lats.append(lat)
+    lons.append(lon)
+    labels.append(label)
 
-    
+train_dict = {'X':lons, 'Y':lats, 'ECO_NAME':labels}
+df = pd.DataFrame(train_dict)
