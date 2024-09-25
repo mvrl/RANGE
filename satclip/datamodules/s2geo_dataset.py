@@ -35,6 +35,9 @@ class S2GeoDataModule(pl.LightningDataModule):
             self.train_transform = get_pretrained_s2_train_transform(resize_crop_size=crop_size)
         elif transform=='default':
             self.train_transform = get_s2_train_transform()
+        elif transform=='rgb':
+            print('Using RGB transform.')
+            self.train_transform = get_rgb_val_transform()
         else:
             self.train_transform = transform
             
@@ -107,8 +110,8 @@ class S2Geo(NonGeoDataset):
         self.root = root
         self.transform = transform
         self.mode = mode
-        if not self._check_integrity():
-            raise RuntimeError("Dataset not found or corrupted.")
+        # if not self._check_integrity():
+        #     raise RuntimeError("Dataset not found or corrupted.")
 
         index_fn = "index.csv"
 
@@ -117,9 +120,14 @@ class S2Geo(NonGeoDataset):
         self.points = []
 
         n_skipped_files = 0
+        unavailable_files = 0
+        existing_filenames = os.listdir(os.path.join(self.root, "images"))
+        existing_filenames = [os.path.join(self.root, "images", fn) for fn in existing_filenames]
         for i in range(df.shape[0]):
             filename = os.path.join(self.root, "images", df.iloc[i]["fn"])
-
+            if filename not in existing_filenames:
+                unavailable_files += 1
+                continue
             if os.path.getsize(filename) < CHECK_MIN_FILESIZE:
                 n_skipped_files += 1
                 continue
@@ -131,6 +139,10 @@ class S2Geo(NonGeoDataset):
 
         print(f"skipped {n_skipped_files}/{len(df)} images because they were smaller "
               f"than {CHECK_MIN_FILESIZE} bytes... they probably contained nodata pixels")
+        print(f"skipped {unavailable_files} images because they were not found in the images directory")
+        #filter files that do not exist
+        
+
 
     def __getitem__(self, index: int) -> Dict[str, Tensor]:
         """Return an index within the dataset.

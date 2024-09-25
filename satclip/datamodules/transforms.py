@@ -87,6 +87,8 @@ def get_pretrained_s2_train_transform(resize_crop_size = 256):
 
 def get_sapclip_transform(resize_crop_size=256):
     augmentation = T.Compose([
+        T.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
         T.RandomCrop(resize_crop_size),
         T.RandomVerticalFlip(),
         T.RandomHorizontalFlip(),
@@ -135,11 +137,28 @@ def get_sapclip_transform(resize_crop_size=256):
         return dict(image=multi_images, point=point, scale=torch.tensor(scale), hot_scale=one_hot_scale)    
     return transform 
 
+def get_rgb_val_transform(resize_crop_size=256):
+    augmentation = T.Compose([
+        T.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+        T.CenterCrop(resize_crop_size),
+        T.ToTensor()
+    ])
+
+    def transform(sample):
+        image = sample['image']
+        point = sample['point']
+        image = augmentation(image)
+        return dict(image=image, point=point)
+    return transform
+
 #get a single crop for each sample irrespective of scale
 def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scale_bins=3, 
             scale_ratio=[1/3,1/3,1/3], crop_type='resized'):
     augmentation = T.Compose([
         T.RandomCrop(resize_crop_size),
+        T.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
         T.RandomVerticalFlip(),
         T.RandomHorizontalFlip(),
         T.GaussianBlur(3),
