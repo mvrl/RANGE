@@ -16,7 +16,7 @@ from einops import repeat
 from sklearn.linear_model import RidgeClassifierCV
 import pandas as pd
 import numpy as np
-from rtdl_num_embeddings import PiecewiseLinearEncoding
+# from rtdl_num_embeddings import PiecewiseLinearEncoding
 
 #local imports 
 from .model import SatCLIP_2

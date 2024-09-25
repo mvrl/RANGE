@@ -7,6 +7,7 @@ from torch import Tensor
 import pandas as pd
 import os
 import rasterio
+from tqdm import tqdm
 from PIL import Image
 #local import 
 from .datamodules.transforms import get_rgb_val_transform, get_multi_spec_val_transform
@@ -16,12 +17,12 @@ from .vision_models.satmae import SatMAE_Raw
 
 def get_args():
     parser = argparse.ArgumentParser(description='Create a database of embeddings')
-    parser.add_argument('--out_path', type=str, help='Path to the save output', default='/projects/bdec/adhakal2/hyper_satclip/data/models/ranf/satclip_satmae_db.npz')
+    parser.add_argument('--out_path', type=str, help='Path to the save output', default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use')
     parser.add_argument('--to_do', type=str, default='make_db', choices=['make_db', 'eval'], help='What to do')
     #dataloader args
-    parser.add_argument('--data_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/original_satclip', help='Path to the data')
-    parser.add_argument('--rgb_path', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/satclip_sentinel/images/sentinel')
+    parser.add_argument('--data_dir', type=str, default='/home/a.dhakal/active/project_crossviewmap/SatCLIP', help='Path to the data')
+    parser.add_argument('--rgb_path', type=str, default='/home/a.dhakal/active/project_crossviewmap/SatCLIP/rgb_sentinel')
     parser.add_argument('--batch_size', type=int, default=200, help='Batch size')
     parser.add_argument('--num_workers', type=int, default=8, help='Number of workers')
     parser.add_argument('--inp_chan', type=int, default=12, help='Number of input channels')
@@ -77,8 +78,15 @@ class SATCLIP_VALDS(torch.utils.data.Dataset):
 
         n_skipped_files = 0
         unavailable_files = 0
-        existing_filenames = os.listdir(os.path.join(self.root, "images"))
+        #get all the files from original sentinel 12 bands
+        existing_old_filenames = os.listdir(os.path.join(self.root, "images"))
+        #get all the files from the rgb
+        existing_rgb_filenames = [''.join((file.split('.')[:-1])) for file in os.listdir(rgb_path)]
+        existing_rgb_filenames = [f+'.tif' for f in existing_rgb_filenames]
+        #only keep files that are common to both
+        existing_filenames = list(set(existing_old_filenames) & set(existing_rgb_filenames))
         existing_filenames = [os.path.join(self.root, "images", fn) for fn in existing_filenames]
+        
         for i in range(df.shape[0]):
             filename = os.path.join(self.root, "images", df.iloc[i]["fn"])
             if filename not in existing_filenames:
@@ -98,9 +106,8 @@ class SATCLIP_VALDS(torch.utils.data.Dataset):
               f"than {CHECK_MIN_FILESIZE} bytes... they probably contained nodata pixels")
         print(f"skipped {unavailable_files} images because they were not found in the images directory")
         ##get the filenames for the rgb path
-        patch_names = [str(path.split('/')[-1])+'.jpeg' for path in self.filenames]
+        patch_names = [patch.split('/')[-1].replace('.tif','.jpg') for patch in existing_filenames]
         self.rgb_filenames = [os.path.join(rgb_path, patch_name) for patch_name in patch_names]
-        
         #filter files that do not exist
         #get the transform
         # if transform=='pretrained':
@@ -124,7 +131,7 @@ class SATCLIP_VALDS(torch.utils.data.Dataset):
         Returns:
             dictionary with "image" and "point" keys where point is in (lon, lat) format
         """
-        point = torch.tensor(self.points[index])
+        point = self.points[index]
         sample_original = {"point": point}
         sample_new = {'point': point}
          
@@ -184,9 +191,7 @@ def create_database(image_model, satclip_model, dataloader, out_path, device='cu
     satclip_embeddings_list = []
     loc_list = []
     with torch.no_grad():
-        for i, data in enumerate(dataloader):
-            if i==10:
-                import code; code.interact(local=dict(globals(), **locals()))
+        for i, data in tqdm(enumerate(dataloader)):
             image_original = data['image_original'].to(device).double()
             image_new = data['image_new'].to(device).double()
             loc = data['point'].double()
@@ -205,7 +210,7 @@ def create_database(image_model, satclip_model, dataloader, out_path, device='cu
     np.savez(out_path, locs=all_loc_list,
         image_embeddings=all_image_embeddings,
         satclip_embeddings=all_satclip_embeddings)
-        print(f'Database created and saved to {out_path}')
+    print(f'Database created and saved to {out_path}')
 
     
 if __name__ == '__main__':

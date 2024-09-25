@@ -9,9 +9,12 @@ from huggingface_hub import hf_hub_download
 from torch.utils.data import random_split, DataLoader
 
 import numpy as np
+from numpy import linalg as LA
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import RidgeClassifierCV, RidgeCV
-
+from sklearn.metrics.pairwise import haversine_distances
+import math
+from tqdm import tqdm
 import argparse
 from einops import repeat
 import os
@@ -35,17 +38,18 @@ def get_args():
     parser.add_argument('--ckpt_path', type=str, help='Path to the pretrained model',
     default='/projects/bdec/adhakal2/hyper_satclip/logs/SAPCLIP/0tflzztx/checkpoints/epoch=162-acc_eco=0.000.ckpt')
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SAPCLIP')
+    parser.add_argument('--ranf_db', type=str, default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/models/ranf/ranf_satmae_db.npz')
     
     #dataset arguments
     parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
                         choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population'])
-    parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
+    parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/eval_data')
     parser.add_argument('--scale', type=int, help='Scale for the location', choices=[0,1,3,5], default=0)
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
     parser.add_argument('--num_workers', type=int, help='Number of workers', default=6)
 
     #logging arguments
-    parser.add_argument('--log_dir', type=str, help='Path to the log directory', default='/projects/bdec/adhakal2/hyper_satclip/logs/downstream')
+    parser.add_argument('--log_dir', type=str, help='Path to the log directory', default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/logs/downstream')
     parser.add_argument('--run_name', type=str, help='Name of the run', default='downstream_eval')
     parser.add_argument('--project_name', type=str, help='Name of the project', default='Donwstream Evaluation')
     parser.add_argument('--wandb_mode', type=str, help='Mode of wandb', default='online')
@@ -56,7 +60,7 @@ def get_args():
     parser.add_argument('--dev_run', action='store_true', help='Run the model in dev mode')
     parser.add_argument('--learning_rate', type=float, default=1e-03)
     #saving embeddings
-    parser.add_argument('--embeddings_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data/embeddings')
+    parser.add_argument('--embeddings_dir', type=str, default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/eval_data/embeddings')
     #eval type
     parser.add_argument('--eval_type', type=str, default='evaluate_npz', choices=['save_embeddings', 'evaluate_raw', 'evaluate_npz'])
     args = parser.parse_args()
@@ -215,7 +219,27 @@ class LocationEncoder(nn.Module):
             ckpt = torch.load('/projects/bdec/adhakal2/hyper_satclip/data/models/patched_location_encoder.pt', map_location=args.device)
             self.loc_model.load_state_dict(ckpt)
             self.location_feature_dim = 512
-         else:
+        #RANF
+        elif 'RANF' in self.location_model_name:
+            #get satcilp location encoder
+            self.loc_model = get_satclip(
+                    hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
+                device=args.device).double()
+            #load the database
+            ranf_db = np.load(args.ranf_db)
+            self.db_locs = torch.from_numpy(ranf_db['locs'])
+            self.db_satclip_embeddings = torch.from_numpy(ranf_db['satclip_embeddings']).double()
+            self.db_high_resolution_satclip_embeddings = torch.from_numpy(ranf_db['image_embeddings']).double()
+            if self.location_model_name=='RANF':
+                print('Using RANF')
+                self.location_feature_dim=1024
+            elif self.location_model_name=='RANF_HILO':
+                print('Using RANF_HILO')
+                self.location_feature_dim=1024+256
+            elif self.location_model_name=='RANF_HAVER':
+                print('Using RANF_HAVER')
+                self.location_feature_dim=1024+256
+        else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
 
     #return the location embeddings
@@ -230,6 +254,50 @@ class LocationEncoder(nn.Module):
         elif self.location_model_name == 'TaxaBind':
             coords = coords[:,[1,0]]
             loc_embeddings = self.loc_model(coords)
+        elif 'RANF' in self.location_model_name:
+            #get the satclip embeddings for the given location
+            curr_loc_embeddings = self.loc_model(coords)
+            #normalize the embeddings
+            curr_loc_embeddings_norm = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
+            db_satclip_embeddings_norm = self.db_satclip_embeddings/self.db_satclip_embeddings.norm(p=2, dim=-1, keepdim=True)
+            
+            # Compute cosine similarity between loc_embeddings and db_satclip_embeddings
+            similarities = curr_loc_embeddings_norm @ db_satclip_embeddings_norm.t()
+
+            # Find the index of the most similar satclip_embedding for each loc_embedding
+            most_similar_indices = np.argmax(similarities, axis=1)
+
+            # Get the corresponding highres_embeddings
+            high_res_embeddings = self.db_high_resolution_satclip_embeddings[most_similar_indices]
+            #only send the rich image features
+            if self.location_model_name=='RANF':
+                loc_embeddings = high_res_embeddings
+            #concatenate rich image features with low res location features
+            elif self.location_model_name=='RANF_HILO':
+                loc_embeddings = torch.cat((high_res_embeddings, curr_loc_embeddings), dim=1)
+            elif self.location_model_name=='RANF_HAVER':
+                #inverting to lat,lon
+                query_locations = coords[:,[1,0]].numpy()
+                #convert to radians
+                query_locations = query_locations * math.pi/180
+                #invert db to lat, lon and convert to radians
+                db_locations = self.db_locs[:,[1,0]]
+                db_locations = db_locations * math.pi/180
+                #get haversine distance
+                import code; code.interact(local=dict(globals(), **locals()))
+                haversine_similarity = haversine_distances([query_locations, db_locations])
+                haversine_similarity = haversine_similarity * 6371000/1000 #multiply by Earth radius to get kilometers
+                #find geometrically closest thing in database
+                closest_indices = np.argmin(haversine_similarity, axis=1)
+                closest_distance = haversine_similarity[np.arange(haversine_similarity.shape[0]),closest_indices]
+                haversine_wt = np.reshape(np.exp(0.02*closest_distace), (-1,1))
+                #get corresponding highres embeddings
+                haversine_high_res_embeddings = self.db_high_resolution_satclip_embeddings[closest_indices]
+                averaged_high_res_embeddings = (haversine_high_res_embeddings*haversine_wt + high_res_embeddings)/2
+                loc_embeddings = torch.cat((averaged_high_res_embeddings, curr_loc_embeddings), dim=1)
+            else:
+                raise ValueError('Unimplemented RANF')
+
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
         return loc_embeddings
