@@ -6,20 +6,22 @@ from typing import Any, Callable, Dict, Optional
 from torch import Tensor
 import pandas as pd
 import os
+import rasterio
 from PIL import Image
 #local import 
-from .datamodules.transforms import get_rgb_val_transform
+from .datamodules.transforms import get_rgb_val_transform, get_multi_spec_val_transform
 from .load import get_satclip
 from .datamodules.s2geo_dataset import S2Geo
 from .vision_models.satmae import SatMAE_Raw
 
 def get_args():
     parser = argparse.ArgumentParser(description='Create a database of embeddings')
-    parser.add_argument('--out_dir', type=str, help='Path to the checkpoint')
+    parser.add_argument('--out_path', type=str, help='Path to the save output', default='/projects/bdec/adhakal2/hyper_satclip/data/models/ranf/satclip_satmae_db.npz')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use')
     parser.add_argument('--to_do', type=str, default='make_db', choices=['make_db', 'eval'], help='What to do')
     #dataloader args
     parser.add_argument('--data_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/original_satclip', help='Path to the data')
+    parser.add_argument('--rgb_path', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/satclip_sentinel/images/sentinel')
     parser.add_argument('--batch_size', type=int, default=200, help='Batch size')
     parser.add_argument('--num_workers', type=int, default=8, help='Number of workers')
     parser.add_argument('--inp_chan', type=int, default=12, help='Number of input channels')
@@ -48,9 +50,11 @@ class SATCLIP_VALDS(torch.utils.data.Dataset):
     def __init__(
         self,
         root: str,
+        rgb_path = None,
         transform: str='rgb',
         mode:str = "rgb",
         crop_size:int = 224,
+        propotype=False
     ) -> None:
         """Initialize a new S2-100K dataset instance.
         Args:
@@ -58,7 +62,7 @@ class SATCLIP_VALDS(torch.utils.data.Dataset):
             transform: torch transform to apply to a sample
             mode: whether the input data is rgb or multispectral
         """
-        assert mode in ["rgb", "multispec"]
+        assert mode in ["rgb", "multispec","both"]
         self.root = root
         self.transform = transform
         self.mode = mode
@@ -89,20 +93,27 @@ class SATCLIP_VALDS(torch.utils.data.Dataset):
                 (df.iloc[i]["lon"], df.iloc[i]["lat"])
             )
         self.points = torch.tensor(self.points)
+        #
         print(f"skipped {n_skipped_files}/{len(df)} images because they were smaller "
               f"than {CHECK_MIN_FILESIZE} bytes... they probably contained nodata pixels")
         print(f"skipped {unavailable_files} images because they were not found in the images directory")
+        ##get the filenames for the rgb path
+        patch_names = [str(path.split('/')[-1])+'.jpeg' for path in self.filenames]
+        self.rgb_filenames = [os.path.join(rgb_path, patch_name) for patch_name in patch_names]
+        
         #filter files that do not exist
         #get the transform
-        if transform=='pretrained':
-            self.train_transform = get_pretrained_s2_train_transform(resize_crop_size=crop_size)
-        elif transform=='default':
-            self.train_transform = get_s2_train_transform()
-        elif transform=='rgb':
-            print('Using RGB transform.')
-            self.train_transform = get_rgb_val_transform(resize_crop_size=crop_size)
-        else:
-            self.train_transform = transform
+        # if transform=='pretrained':
+        #     self.train_transform = get_pretrained_s2_train_transform(resize_crop_size=crop_size)
+        # elif transform=='default':
+        #     self.train_transform = get_s2_train_transform()
+        # elif transform=='rgb':
+        #     print('Using RGB transform.')
+        #     self.train_transform = get_rgb_val_transform(resize_crop_size=crop_size)
+        # else:
+        #     self.train_transform = transform
+        self.rgb_transform = get_rgb_val_transform(resize_crop_size=crop_size)
+        self.multi_spec_transform = get_multi_spec_val_transform(resize_crop_size=crop_size)
         
 
 
@@ -114,8 +125,8 @@ class SATCLIP_VALDS(torch.utils.data.Dataset):
             dictionary with "image" and "point" keys where point is in (lon, lat) format
         """
         point = torch.tensor(self.points[index])
-        sample = {"point": point}
-       
+        sample_original = {"point": point}
+        sample_new = {'point': point}
          
         if self.mode == "multi_spec":
             with rasterio.open(self.filenames[index]) as f:
@@ -123,11 +134,24 @@ class SATCLIP_VALDS(torch.utils.data.Dataset):
         elif self.mode == "rgb":
              data = Image.open(self.filenames[index])
              data.convert('RGB')
-
-        sample["image"] = data
+        elif self.mode == "both":
+            #first process the multispectral data
+            with rasterio.open(self.filenames[index]) as f:
+                data = f.read().astype(np.float32)
+            sample_original['image'] = data
+#           now process the rgb data
+            rgb_data = Image.open(self.rgb_filenames[index])
+            rgb_data.convert('RGB')
+            sample_new['image'] = rgb_data
+            
+            #trasnform the data
+            if self.transform:
+                sample_original = self.multi_spec_transform(sample_original)
+                sample_new = self.rgb_transform(sample_new)
         
-        if self.transform is not None:
-            sample = self.transform(sample)
+
+        sample = {'point': point, 'image_original': sample_original['image'],
+         'image_new': sample_new['image']}
             
         return sample
 
@@ -152,36 +176,59 @@ class SATCLIP_VALDS(torch.utils.data.Dataset):
         return True
 
 
-def create_database(model, dataloader, outpath, device='cuda'):
-    location_encoder = model.location.eval()
-    image_encoder = model.visual
-    import code; code.interact(local=dict(globals(), **locals()))
+def create_database(image_model, satclip_model, dataloader, out_path, device='cuda'):
+    #double check and set to eval mode
+    image_model.eval()
+    satclip_model.eval()
+    image_embeddings_list = []
+    satclip_embeddings_list = []
+    loc_list = []
     with torch.no_grad():
         for i, data in enumerate(dataloader):
-            image = data['image'].to(device)
-            y = data['point']
-            #get the embeddings
-            image_features = model(x, y)
-            embeddings = embeddings.cpu().numpy()
-            #save the embeddings
-            np.savez(outpath + f'/embeddings_{i}.npz', embeddings=embeddings)
+            if i==10:
+                import code; code.interact(local=dict(globals(), **locals()))
+            image_original = data['image_original'].to(device).double()
+            image_new = data['image_new'].to(device).double()
+            loc = data['point'].double()
+            #compute the location and image embeddings
+            satclip_embeddings = satclip_model(image_original).detach().cpu().numpy()
+            image_embeddings = image_model(image_new).detach().cpu().numpy()
+            #save the embeddings and location
+            satclip_embeddings_list.append(satclip_embeddings)
+            image_embeddings_list.append(image_embeddings)
+            
+            loc_list.append(loc)
+    #save the embeddings as npz file
+    all_image_embeddings = np.concatenate(image_embeddings_list, axis=0)
+    all_satclip_embeddings = np.concatenate(satclip_embeddings_list, axis=0)
+    all_loc_list = np.concatenate(loc_list, axis=0)
+    np.savez(out_path, locs=all_loc_list,
+        image_embeddings=all_image_embeddings,
+        satclip_embeddings=all_satclip_embeddings)
+        print(f'Database created and saved to {out_path}')
+
     
 if __name__ == '__main__':
     args = get_args()
     #get the satclip model
-    # model = get_satclip(
-    #         hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
-    #             device = args.device, return_all=True)
-    
-    #get the dataset
-    # datamodule = S2GeoDataModule(data_dir=args.data_dir,
-    #     batch_size=args.batch_size, num_workers=args.num_workers, val_random_split_fraction=0.1)
-    # datamodule.setup()
-    # dataloader = datamodule.train_dataloader()
+
+    #create the dataset
     dataset = SATCLIP_VALDS(root=args.data_dir,
-    transform='rgb',
-    mode='rgb')
-    import code; code.interact(local=dict(globals(), **locals()))
+    transform=True,
+    mode='both',
+    rgb_path=args.rgb_path)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, 
+    shuffle=False, num_workers=args.num_workers, drop_last=False)
+    #grab the image and location models
+    image_model = SatMAE_Raw().eval().to(args.device).double()
+    location_model = get_satclip(
+            hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
+                device = args.device, return_all=True).eval().double()
+    satclip_image_model = location_model.visual.eval()
+    
     #create the database
     if args.to_do == 'make_db':
-        create_database(model, dataloader, args.out_dir)
+        create_database(image_model=image_model, satclip_model=satclip_image_model, 
+        dataloader=dataloader, out_path=args.out_path, device=args.device)
+    else:
+        raise ValueError('Invalid option for to_do. Must be make_db')

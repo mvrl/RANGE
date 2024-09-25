@@ -87,13 +87,13 @@ def get_pretrained_s2_train_transform(resize_crop_size = 256):
 
 def get_sapclip_transform(resize_crop_size=256):
     augmentation = T.Compose([
-        T.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
         T.RandomCrop(resize_crop_size),
         T.RandomVerticalFlip(),
         T.RandomHorizontalFlip(),
         T.GaussianBlur(3),
-        T.ToTensor()
+        T.ToTensor(),
+        T.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
     ])
 
     map_scale = {1:torch.tensor([1,0,0]), 3:torch.tensor([0,1,0]), 5:torch.tensor([0,0,1])}
@@ -139,10 +139,10 @@ def get_sapclip_transform(resize_crop_size=256):
 
 def get_rgb_val_transform(resize_crop_size=256):
     augmentation = T.Compose([
-        T.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
         T.CenterCrop(resize_crop_size),
-        T.ToTensor()
+        T.ToTensor(),
+        T.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
     ])
 
     def transform(sample):
@@ -150,6 +150,26 @@ def get_rgb_val_transform(resize_crop_size=256):
         point = sample['point']
         image = augmentation(image)
         return dict(image=image, point=point)
+    return transform
+
+def get_multi_spec_val_transform(resize_crop_size=256):
+    augmentation = T.Compose([
+        T.CenterCrop(resize_crop_size)
+    ])
+    def transform(sample):
+        image = sample["image"] / 10000.0
+        point = sample["point"]
+
+        B10 = np.zeros((1, *image.shape[1:]), dtype=image.dtype)
+        image = np.concatenate([image[:10], B10, image[10:]], axis=0)
+        
+        image = torch.tensor(image)
+        image = augmentation(image)
+
+        point = point
+
+        return dict(image=image, point=point)
+
     return transform
 
 #get a single crop for each sample irrespective of scale
