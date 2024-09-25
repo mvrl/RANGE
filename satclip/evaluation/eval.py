@@ -191,28 +191,31 @@ class LocationEncoder(nn.Module):
         super().__init__()
         self.location_model_name = args.location_model_name
         #get the appropriate model
+        #our model
         if self.location_model_name == 'SAPCLIP':
             print('Using SAPCLIP')
             self.loc_model = load_checkpoint(args.ckpt_path, args.device).model.eval()
             self.location_feature_dim = 256
+        #SatCLIP for encoding location
         elif self.location_model_name == 'SatCLIP':
             print('Using SatCLIP')
             self.loc_model = get_satclip(
                     hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
                 device=args.device).double()
             self.location_feature_dim = 256  
+        #satclip for encoding location and image
         elif self.location_model_name == 'GeoCLIP':
             print('Using GeoCLIP')
             self.loc_model = GeoCLIP().double()
             self.location_feature_dim = 512
+        #taxabind for encoding location
         elif self.location_model_name == 'TaxaBind':
             print('Using TaxaBind')
             self.loc_model = GeoCLIP().double()
             ckpt = torch.load('/projects/bdec/adhakal2/hyper_satclip/data/models/patched_location_encoder.pt', map_location=args.device)
             self.loc_model.load_state_dict(ckpt)
             self.location_feature_dim = 512
-
-        else:
+         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
 
     #return the location embeddings

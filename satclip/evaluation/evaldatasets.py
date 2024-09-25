@@ -4,6 +4,9 @@ import torch
 import pandas as pd
 import os
 import numpy as np
+
+##local import
+from ..datamodules.s2geo_dataset import S2GeoDataModule 
 #srikumar
 class Biome_Dataset(Dataset):
     def __init__(self, data_path, scale):
@@ -168,18 +171,20 @@ if __name__ == '__main__':
     
     population_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/population.csv'
     population_dataset = Population_Dataset(population_data_path, scale=0)
-    ##### test #########
-    import pandas as pd
-    lats = []
-    lons = []
-    labels = []
-    for i, data in enumerate(dataset_val):
-        loc, scale, label = data
-        lat = loc[1].cpu().numpy()
-        lon = loc[0].cpu().numpy()
-        lats.append(lat)
-        lons.append(lon)
-        labels.append(label)
 
-    train_dict = {'X':lons, 'Y':lats, 'ECO_NAME':labels}
-    df = pd.DataFrame(train_dict)
+    
+    # ##### test #########
+    # import pandas as pd
+    # lats = []
+    # lons = []
+    # labels = []
+    # for i, data in enumerate(dataset_val):
+    #     loc, scale, label = data
+    #     lat = loc[1].cpu().numpy()
+    #     lon = loc[0].cpu().numpy()
+    #     lats.append(lat)
+    #     lons.append(lon)
+    #     labels.append(label)
+
+    # train_dict = {'X':lons, 'Y':lats, 'ECO_NAME':labels}
+    # df = pd.DataFrame(train_dict)
