@@ -20,6 +20,7 @@ from einops import repeat
 import os
 from tqdm import tqdm 
 import sys
+import faiss
 #local import 
 from ..utils.load_model import load_checkpoint
 from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset
@@ -30,8 +31,7 @@ from geoclip import LocationEncoder as GeoCLIP #input as lat,long
 import warnings
 
 # Suppress all FutureWarnings
-warnings.filterwarnings("ignore", category=FutureWarning)
-
+EARTH_RADIUS=6371
 def get_args():
     parser = argparse.ArgumentParser(description='code for evaluating the embeddings')
     #location model arguments
@@ -39,7 +39,7 @@ def get_args():
     default='/projects/bdec/adhakal2/hyper_satclip/logs/SAPCLIP/0tflzztx/checkpoints/epoch=162-acc_eco=0.000.ckpt')
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SAPCLIP')
     parser.add_argument('--ranf_db', type=str, default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/models/ranf/ranf_satmae_db.npz')
-    
+    parser.add_argument('--k', type=int, default=1, help='Number of nearest neighbors to consider for RANF')
     #dataset arguments
     parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
                         choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population'])
@@ -67,16 +67,17 @@ def get_args():
 
     return args
 
+
 def save_embeddings(args, train_loader, val_loader, location_model):
     feature_dim = location_model.location_feature_dim
-    embeddings_dir = os.path.join(args.embeddings_dir, args.location_model_name)
+    embeddings_dir = os.path.join(args.embeddings_dir, args.location_model_name, str(args.k))
     #check if directory already exist for this model
     if not os.path.exists(embeddings_dir):
         print(f'Creating new directory {embeddings_dir}')
         os.makedirs(embeddings_dir)
     #create train and val path
-    train_path = os.path.join(embeddings_dir, f'{args.task_name}_scale-{args.scale}_train.npz')
-    val_path = os.path.join(embeddings_dir, f'{args.task_name}_scale-{args.scale}_val.npz')
+    train_path = os.path.join(embeddings_dir, f'{args.task_name}_k-{args.k}_scale-{args.scale}_train.npz')
+    val_path = os.path.join(embeddings_dir, f'{args.task_name}_k-{args.k}scale-{args.scale}_val.npz')
     #freeze the model
     location_model.eval()
     with torch.no_grad():
@@ -89,7 +90,10 @@ def save_embeddings(args, train_loader, val_loader, location_model):
             coords, scale, y = data
             coords = coords.to(args.device)
             scale = scale.to(args.device)
-            location_embeddings = location_model(coords, scale).cpu().numpy()
+            try:
+                location_embeddings = location_model(coords, scale).cpu().numpy()
+            except AttributeError:
+                location_embeddings = location_model(coords, scale)
             scale = scale.cpu().numpy()
             coords = coords.cpu().numpy()
             y = y.cpu().numpy()
@@ -110,7 +114,10 @@ def save_embeddings(args, train_loader, val_loader, location_model):
             coords, scale, y = data
             coords = coords.to(args.device)
             scale = scale.to(args.device)
-            location_embeddings = location_model(coords, scale).cpu().numpy()
+            try:
+                location_embeddings = location_model(coords, scale).cpu().numpy()
+            except AttributeError:
+                location_embeddings = location_model(coords, scale)
             scale = scale.cpu().numpy()
             coords = coords.cpu().numpy()
             y = y.cpu().numpy()
@@ -123,8 +130,8 @@ def save_embeddings(args, train_loader, val_loader, location_model):
         print(f'File saved to {train_path} and {val_path}')
 
 def evaluate_npz(args):
-    train_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_scale-'+str(args.scale)+'_train.npz')
-    val_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_scale-'+str(args.scale)+'_val.npz')
+    train_path = os.path.join(args.embeddings_dir, args.location_model_name,str(args.k), args.task_name+'_k-'+str(_args.k)+'_scale-'+str(args.scale)+'_train.npz')
+    val_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_k-'+str(_args.k)+'_scale-'+str(args.scale)+'_val.npz')
     assert os.path.exists(train_path), f'Train embeddings file does not exist: {train_path}'
     assert os.path.exists(val_path), f'Val embeddings file does not exist: {val_path}'
     #get training data
@@ -190,10 +197,19 @@ def get_dataset(args):
     val_loader = DataLoader(dataset_val, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False, drop_last=False)
     return train_loader, val_loader, num_classes
 
+#change lat_lon in radians to cartesian coordinates
+def rad_to_cart(locations):
+    x = np.cos(locations[:,1]) * np.cos(locations[:,0])
+    y = np.cos(locations[:,1]) * np.sin(locations[:,0])
+    z = np.sin(locations[:,1])
+    xyz = np.stack([x, y, z], axis=1)
+    return xyz
+
 class LocationEncoder(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.location_model_name = args.location_model_name
+        self.k = args.k
         #get the appropriate model
         #our model
         if self.location_model_name == 'SAPCLIP':
@@ -227,18 +243,37 @@ class LocationEncoder(nn.Module):
                 device=args.device).double()
             #load the database
             ranf_db = np.load(args.ranf_db)
-            self.db_locs = torch.from_numpy(ranf_db['locs'])
-            self.db_satclip_embeddings = torch.from_numpy(ranf_db['satclip_embeddings']).double()
-            self.db_high_resolution_satclip_embeddings = torch.from_numpy(ranf_db['image_embeddings']).double()
+            self.db_locs_latlon = ranf_db['locs'].astype(np.float32)
+            self.db_satclip_embeddings = ranf_db['satclip_embeddings'].astype(np.float32)
+            self.db_high_resolution_satclip_embeddings = ranf_db['image_embeddings'].astype(np.float32)
+            #convert lon, lat to radians
+            self.db_locs = self.db_locs_latlon * math.pi/180
+            #convert to cartesian coordinates
+            self.db_locs_xyz = rad_to_cart(self.db_locs)
+            
+            #create index for the satclip embeddings
+            self.db_satclip_index = faiss.IndexFlatIP(self.db_satclip_embeddings.shape[1])
+            faiss.normalize_L2(self.db_satclip_embeddings.astype(np.float32))
+            self.db_satclip_index.add(self.db_satclip_embeddings)
+            #select which version of RANF to use
             if self.location_model_name=='RANF':
                 print('Using RANF')
                 self.location_feature_dim=1024
+                #create the index
             elif self.location_model_name=='RANF_HILO':
                 print('Using RANF_HILO')
                 self.location_feature_dim=1024+256
+                
             elif self.location_model_name=='RANF_HAVER':
                 print('Using RANF_HAVER')
                 self.location_feature_dim=1024+256
+                #create the faiss index for the cartesian coordinates
+                self.db_locs_index = faiss.IndexFlatIP(3)
+                faiss.normalize_L2(self.db_locs_xyz.astype(np.float32))
+                self.db_locs_index.add(self.db_locs_xyz)
+
+
+                
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
 
@@ -256,45 +291,43 @@ class LocationEncoder(nn.Module):
             loc_embeddings = self.loc_model(coords)
         elif 'RANF' in self.location_model_name:
             #get the satclip embeddings for the given location
-            curr_loc_embeddings = self.loc_model(coords)
+            curr_loc_embeddings = self.loc_model(coords).cpu().numpy()
+            D,I = self.db_satclip_index.search(curr_loc_embeddings, self.k)
             #normalize the embeddings
-            curr_loc_embeddings_norm = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
-            db_satclip_embeddings_norm = self.db_satclip_embeddings/self.db_satclip_embeddings.norm(p=2, dim=-1, keepdim=True)
+            # curr_loc_embeddings_norm = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
+            # db_satclip_embeddings_norm = self.db_satclip_embeddings/self.db_satclip_embeddings.norm(p=2, dim=-1, keepdim=True)
             
-            # Compute cosine similarity between loc_embeddings and db_satclip_embeddings
-            similarities = curr_loc_embeddings_norm @ db_satclip_embeddings_norm.t()
+            # # Compute cosine similarity between loc_embeddings and db_satclip_embeddings
+            # similarities = curr_loc_embeddings_norm @ db_satclip_embeddings_norm.t()
 
-            # Find the index of the most similar satclip_embedding for each loc_embedding
-            most_similar_indices = np.argmax(similarities, axis=1)
-
+            # # Find the index of the most similar satclip_embedding for each loc_embedding
+            # most_similar_indices = np.argmax(similarities, axis=1)
+            
             # Get the corresponding highres_embeddings
-            high_res_embeddings = self.db_high_resolution_satclip_embeddings[most_similar_indices]
+            high_res_embeddings = self.db_high_resolution_satclip_embeddings[I]
+            high_res_embeddings = high_res_embeddings.mean(axis=1)
             #only send the rich image features
             if self.location_model_name=='RANF':
                 loc_embeddings = high_res_embeddings
             #concatenate rich image features with low res location features
             elif self.location_model_name=='RANF_HILO':
-                loc_embeddings = torch.cat((high_res_embeddings, curr_loc_embeddings), dim=1)
+                loc_embeddings = np.concatenate((high_res_embeddings, curr_loc_embeddings), axis=1)
             elif self.location_model_name=='RANF_HAVER':
-                #inverting to lat,lon
-                query_locations = coords[:,[1,0]].numpy()
+                #lon, lat
+                query_locations_latlon = coords.numpy()
                 #convert to radians
-                query_locations = query_locations * math.pi/180
-                #invert db to lat, lon and convert to radians
-                db_locations = self.db_locs[:,[1,0]]
-                db_locations = db_locations * math.pi/180
-                db_locations = db_locations.numpy()
+                query_locations = query_locations_latlon * math.pi/180
+                #convert to cartesian coordinates
+                query_locations_xyz = rad_to_cart(query_locations)
+
+                D_ang,I_ang = self.db_locs_index.search(query_locations_xyz, args.k)
                 #get haversine distance
-                haversine_similarity = haversine_distances(X=query_locations, Y=db_locations)
-                haversine_similarity = haversine_similarity * 6371 #multiply by Earth radius to get kilometers
-                #find geometrically closest thing in database
-                closest_indices = np.argmin(haversine_similarity, axis=1)
-                closest_distance = haversine_similarity[np.arange(haversine_similarity.shape[0]),closest_indices]
-                haversine_wt = np.reshape(np.exp(-0.05*closest_distance), (-1,1))
                 #get corresponding highres embeddings
-                haversine_high_res_embeddings = self.db_high_resolution_satclip_embeddings[closest_indices]
-                averaged_high_res_embeddings = (haversine_high_res_embeddings*haversine_wt + high_res_embeddings)/2
-                loc_embeddings = torch.cat((averaged_high_res_embeddings, curr_loc_embeddings), dim=1)
+                angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[I_ang]
+                angualar_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
+                #get average semantic and distace based embeddings
+                averaged_high_res_embeddings = (high_res_embeddings + angular_high_rest_embeddings)/2
+                loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings), axis=1)
             else:
                 raise ValueError('Unimplemented RANF')
 
