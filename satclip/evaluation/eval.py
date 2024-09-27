@@ -283,14 +283,14 @@ class LocationEncoder(nn.Module):
                 #invert db to lat, lon and convert to radians
                 db_locations = self.db_locs[:,[1,0]]
                 db_locations = db_locations * math.pi/180
+                db_locations = db_locations.numpy()
                 #get haversine distance
-                import code; code.interact(local=dict(globals(), **locals()))
-                haversine_similarity = haversine_distances([query_locations, db_locations])
-                haversine_similarity = haversine_similarity * 6371000/1000 #multiply by Earth radius to get kilometers
+                haversine_similarity = haversine_distances(X=query_locations, Y=db_locations)
+                haversine_similarity = haversine_similarity * 6371 #multiply by Earth radius to get kilometers
                 #find geometrically closest thing in database
                 closest_indices = np.argmin(haversine_similarity, axis=1)
                 closest_distance = haversine_similarity[np.arange(haversine_similarity.shape[0]),closest_indices]
-                haversine_wt = np.reshape(np.exp(0.02*closest_distace), (-1,1))
+                haversine_wt = np.reshape(np.exp(-0.05*closest_distance), (-1,1))
                 #get corresponding highres embeddings
                 haversine_high_res_embeddings = self.db_high_resolution_satclip_embeddings[closest_indices]
                 averaged_high_res_embeddings = (haversine_high_res_embeddings*haversine_wt + high_res_embeddings)/2
