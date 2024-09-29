@@ -4,12 +4,13 @@ import torch
 import pandas as pd
 import os
 import numpy as np
+import json
 
 ##local import
 from ..datamodules.s2geo_dataset import S2GeoDataModule 
 #srikumar
 class Biome_Dataset(Dataset):
-    def __init__(self, data_path, scale):
+    def __init__(self, data_path, scale=0):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
@@ -37,7 +38,7 @@ class Biome_Dataset(Dataset):
 
 #srikumar
 class Eco_Dataset(Dataset):
-    def __init__(self, data_path, scale):
+    def __init__(self, data_path, scale=0):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
@@ -65,7 +66,7 @@ class Eco_Dataset(Dataset):
 
 
 class Temp_Dataset(Dataset):
-    def __init__(self, data_path, scale):
+    def __init__(self, data_path, scale=0):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
@@ -88,7 +89,7 @@ class Temp_Dataset(Dataset):
 
 #https://www.kaggle.com/datasets/camnugent/california-housing-prices
 class Housing_Dataset(Dataset):
-    def __init__(self, data_path, scale):
+    def __init__(self, data_path, scale=0):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
@@ -111,7 +112,7 @@ class Housing_Dataset(Dataset):
 
 #https://codeocean.com/capsule/6456296/tree/v2
 class Elevation_Dataset(Dataset):
-    def __init__(self, data_path, scale):
+    def __init__(self, data_path, scale=0):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
@@ -134,7 +135,7 @@ class Elevation_Dataset(Dataset):
 
 #https://codeocean.com/capsule/6456296/tree/v2
 class Population_Dataset(Dataset):
-    def __init__(self, data_path, scale):
+    def __init__(self, data_path, scale=0):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
@@ -154,23 +155,60 @@ class Population_Dataset(Dataset):
 
     def __len__(self):
         return len(self.label)
+
+class NaBirdDataset(Dataset):
+    def __init__(self, data_path,scale=0,type='val'):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
+        self.data_path = data_path
+        
+        #load train data
+        with open(self.data_path, 'r') as f:
+            data = json.load(f)
+        if type=='train':
+            data = data['train']
+        elif type=='val':
+            data = data['test']
+
+        self.df = pd.DataFrame(data)
+        self.df.dropna(subset=['class_id'],inplace=True)
+        self.df.reset_index(drop=False, inplace=True)
+        #get metadata
+        meta_table = pd.DataFrame(list(self.df['ebird_meta']))
+        self.loc = meta_table[['lon', 'lat']].values
+        self.label = self.df['class_id']
+
+        self.num_classes = len(self.label.unique())
     
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        label = self.label[index]
+        return loc,self.curr_scale,label
+
+    def __len__(self):
+        return len(self.label)     
+        
 
 if __name__ == '__main__':
 
-    biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
-    biome_dataset = Biome_Dataset(biome_data_path, scale=1)
-    temp_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/temp.csv'
-    temp_dataset = Temp_Dataset(temp_data_path,scale=3)
+    nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
+    nabird_dataset = NaBirdDataset(nabird_data_path, scale=0)
+    import code; code.interact(local=dict(globals(), **locals()))
+    # biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
+    # biome_dataset = Biome_Dataset(biome_data_path, scale=1)
+    # temp_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/temp.csv'
+    # temp_dataset = Temp_Dataset(temp_data_path,scale=3)
 
-    housing_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/housing.csv'
-    housing_dataset = Housing_Dataset(housing_data_path, scale=5)
+    # housing_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/housing.csv'
+    # housing_dataset = Housing_Dataset(housing_data_path, scale=5)
 
-    elevation_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/elevation.csv'
-    elevation_dataset = Elevation_Dataset(elevation_data_path, scale=0)
+    # elevation_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/elevation.csv'
+    # elevation_dataset = Elevation_Dataset(elevation_data_path, scale=0)
     
-    population_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/population.csv'
-    population_dataset = Population_Dataset(population_data_path, scale=0)
+    # population_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/population.csv'
+    # population_dataset = Population_Dataset(population_data_path, scale=0)
+    
 
     
     # ##### test #########
