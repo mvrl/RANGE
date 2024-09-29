@@ -10,8 +10,10 @@ from torch.utils.data import random_split, DataLoader
 
 import numpy as np
 from numpy import linalg as LA
+import sklearn
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import RidgeClassifierCV, RidgeCV
+from sklearn.metrics import top_k_accuracy_score
 from sklearn.metrics.pairwise import haversine_distances
 import math
 from tqdm import tqdm
@@ -23,7 +25,7 @@ import sys
 import faiss
 #local import 
 from ..utils.load_model import load_checkpoint
-from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset
+from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, NaBirdDataset
 #loading different location models
 from ..load import get_satclip
 from geoclip import LocationEncoder as GeoCLIP #input as lat,long
@@ -42,7 +44,7 @@ def get_args():
     parser.add_argument('--k', type=int, default=1, help='Number of nearest neighbors to consider for RANF')
     #dataset arguments
     parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
-                        choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population'])
+                        choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds'])
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/eval_data')
     parser.add_argument('--scale', type=int, help='Scale for the location', choices=[0,1,3,5], default=0)
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
@@ -77,7 +79,7 @@ def save_embeddings(args, train_loader, val_loader, location_model):
         os.makedirs(embeddings_dir)
     #create train and val path
     train_path = os.path.join(embeddings_dir, f'{args.task_name}_k-{args.k}_scale-{args.scale}_train.npz')
-    val_path = os.path.join(embeddings_dir, f'{args.task_name}_k-{args.k}scale-{args.scale}_val.npz')
+    val_path = os.path.join(embeddings_dir, f'{args.task_name}_k-{args.k}_scale-{args.scale}_val.npz')
     #freeze the model
     location_model.eval()
     with torch.no_grad():
@@ -130,8 +132,8 @@ def save_embeddings(args, train_loader, val_loader, location_model):
         print(f'File saved to {train_path} and {val_path}')
 
 def evaluate_npz(args):
-    train_path = os.path.join(args.embeddings_dir, args.location_model_name,str(args.k), args.task_name+'_k-'+str(_args.k)+'_scale-'+str(args.scale)+'_train.npz')
-    val_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_k-'+str(_args.k)+'_scale-'+str(args.scale)+'_val.npz')
+    train_path = os.path.join(args.embeddings_dir, args.location_model_name,str(args.k), args.task_name+'_k-'+str(args.k)+'_scale-'+str(args.scale)+'_train.npz')
+    val_path = os.path.join(args.embeddings_dir, args.location_model_name,str(args.k), args.task_name+'_k-'+str(args.k)+'_scale-'+str(args.scale)+'_val.npz')
     assert os.path.exists(train_path), f'Train embeddings file does not exist: {train_path}'
     assert os.path.exists(val_path), f'Val embeddings file does not exist: {val_path}'
     #get training data
@@ -146,6 +148,12 @@ def evaluate_npz(args):
     if args.task_name == 'ecoregion' or args.task_name == 'biome':
         print('Classification Model')
         clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
+    elif args.task_name == 'nabirds':
+        #create the scorer
+        top_k_scorer = sklearn.metrics.make_scorer(top_k_accuracy_score, k=50)
+        print('Top-k Classification Model')
+        clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10, 
+        scoring=top_k_scorer)
     else:
         print('Regression Model')
         clf = RidgeCV(alphas=(0.1, 1.0, 10.0), cv=10)
@@ -191,6 +199,11 @@ def get_dataset(args):
         dataset = Population_Dataset(data_path, args.scale)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
+    elif args.task_name == 'nabirds':
+        data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
+        dataset_train = NaBirdDataset(data_path, args.scale, type='train')
+        dataset_val  = NaBirdDataset(data_path, args.scale, type='val')
+        num_classes = dataset_train.num_classes
     else:
         raise ValueError('Task name not recognized')
     train_loader = DataLoader(dataset_train, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, drop_last=False)
@@ -326,7 +339,7 @@ class LocationEncoder(nn.Module):
                 angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[I_ang]
                 angualar_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
                 #get average semantic and distace based embeddings
-                averaged_high_res_embeddings = (high_res_embeddings + angular_high_rest_embeddings)/2
+                averaged_high_res_embeddings = (high_res_embeddings + angular_high_res_embeddings)/2
                 loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings), axis=1)
             else:
                 raise ValueError('Unimplemented RANF')
