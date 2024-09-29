@@ -173,10 +173,17 @@ class NaBirdDataset(Dataset):
 
         self.df = pd.DataFrame(data)
         self.df.dropna(subset=['class_id'],inplace=True)
+
         self.df.reset_index(drop=False, inplace=True)
         #get metadata
         meta_table = pd.DataFrame(list(self.df['ebird_meta']))
-        self.loc = meta_table[['lon', 'lat']].values
+        self.df['lon'] = meta_table['lon']
+        self.df['lat'] = meta_table['lat']
+        #drop nan values in lon and lat
+        self.df.dropna(subset=['lon','lat'],inplace=True)
+        self.df.reset_index(drop=True, inplace=True)
+        #assign lon, lat to loc
+        self.loc = self.df[['lon', 'lat']].values
         self.label = self.df['class_id']
 
         self.num_classes = len(self.label.unique())
