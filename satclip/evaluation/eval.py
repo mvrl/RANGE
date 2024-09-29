@@ -314,7 +314,7 @@ class LocationEncoder(nn.Module):
                 loc_embeddings = np.concatenate((high_res_embeddings, curr_loc_embeddings), axis=1)
             elif self.location_model_name=='RANF_HAVER':
                 #lon, lat
-                query_locations_latlon = coords.numpy()
+                query_locations_latlon = coords.cpu().numpy()
                 #convert to radians
                 query_locations = query_locations_latlon * math.pi/180
                 #convert to cartesian coordinates
