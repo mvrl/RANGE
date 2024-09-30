@@ -194,14 +194,51 @@ class NaBirdDataset(Dataset):
         return loc,self.curr_scale,label
 
     def __len__(self):
+        return len(self.label)    
+
+class INatMini(Dataset):
+    def __init__(self, data_path,scale=0,type='val'):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
+        if type=='train':
+            self.data_path = os.path.join(data_path,'train_mini.json')
+        elif type=='val':
+            self.data_path = os.path.join(data_path,'val.json')
+        
+        #load train data
+        with open(self.data_path, 'r') as f:
+            data = json.load(f)
+        self.sample_df = pd.DataFrame(data['images'])
+        self.annot_df = pd.DataFrame(data['annotations'])
+        self.df =self.sample_df.merge(self.annot_df, on='id')
+        #drop all nan rows and reset index 
+        self.df.dropna(subset=['category_id', 'latitude', 'longitude'],inplace=True)
+        self.df.reset_index(drop=False, inplace=True)
+        
+        #assign lon, lat to loc
+        self.loc = self.df[['longitude', 'latitude']].values
+        self.label = self.df['category_id']
+
+        self.num_classes = len(self.label.unique())
+    
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        label = self.label[index]
+        return loc,self.curr_scale,label
+
+    def __len__(self):
         return len(self.label)     
         
 
 if __name__ == '__main__':
 
-    nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
-    nabird_dataset = NaBirdDataset(nabird_data_path, scale=0)
+    inat_mini_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat_mini'
+    inat_mini_dataset = INatMini(inat_mini_path, scale=0,type='train')
     import code; code.interact(local=dict(globals(), **locals()))
+    # nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
+    # nabird_dataset = NaBirdDataset(nabird_data_path, scale=0)
+    # import code; code.interact(local=dict(globals(), **locals()))
     # biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
     # biome_dataset = Biome_Dataset(biome_data_path, scale=1)
     # temp_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/temp.csv'
