@@ -196,7 +196,7 @@ class NaBirdDataset(Dataset):
     def __len__(self):
         return len(self.label)    
 
-class INatMini(Dataset):
+class INatMiniDataset(Dataset):
     def __init__(self, data_path,scale=0,type='val'):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
@@ -235,7 +235,6 @@ if __name__ == '__main__':
 
     inat_mini_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat_mini'
     inat_mini_dataset = INatMini(inat_mini_path, scale=0,type='train')
-    import code; code.interact(local=dict(globals(), **locals()))
     # nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
     # nabird_dataset = NaBirdDataset(nabird_data_path, scale=0)
     # import code; code.interact(local=dict(globals(), **locals()))

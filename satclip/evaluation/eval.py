@@ -25,7 +25,7 @@ import sys
 import faiss
 #local import 
 from ..utils.load_model import load_checkpoint
-from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, NaBirdDataset
+from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, NaBirdDataset, INatMiniDataset
 #loading different location models
 from ..load import get_satclip
 from geoclip import LocationEncoder as GeoCLIP #input as lat,long
@@ -204,6 +204,11 @@ def get_dataset(args):
         dataset_train = NaBirdDataset(data_path, args.scale, type='train')
         dataset_val  = NaBirdDataset(data_path, args.scale, type='val')
         num_classes = dataset_train.num_classes
+    elif args.task_name == 'inat-mini':
+        data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat_mini'
+        dataset_train = INatMiniDataset(data_path, args.scale, type='train')
+        dataset_val  = INatMiniDataset(data_path, args.scale, type='val')
+        num_classes = dataset_train.num_classes
     else:
         raise ValueError('Task name not recognized')
     train_loader = DataLoader(dataset_train, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, drop_last=False)
@@ -332,12 +337,11 @@ class LocationEncoder(nn.Module):
                 query_locations = query_locations_latlon * math.pi/180
                 #convert to cartesian coordinates
                 query_locations_xyz = rad_to_cart(query_locations)
-
-                D_ang,I_ang = self.db_locs_index.search(query_locations_xyz, args.k)
+                D_ang,I_ang = self.db_locs_index.search(query_locations_xyz, 1)
                 #get haversine distance
                 #get corresponding highres embeddings
                 angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[I_ang]
-                angualar_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
+                angular_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
                 #get average semantic and distace based embeddings
                 averaged_high_res_embeddings = (high_res_embeddings + angular_high_res_embeddings)/2
                 loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings), axis=1)
