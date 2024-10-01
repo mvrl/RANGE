@@ -133,6 +133,8 @@ class Elevation_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+
+
 #https://codeocean.com/capsule/6456296/tree/v2
 class Population_Dataset(Dataset):
     def __init__(self, data_path, scale=0):
@@ -147,6 +149,7 @@ class Population_Dataset(Dataset):
         self.loc = self.df[['lon', 'lat']].values
         self.label = self.df['population']
         self.num_classes = 0
+
 
     def __getitem__(self, index):
         loc =  torch.from_numpy(self.loc[index]).double()
@@ -228,13 +231,40 @@ class INatMiniDataset(Dataset):
         return loc,self.curr_scale,label
 
     def __len__(self):
-        return len(self.label)     
+        return len(self.label)  
+
+class ZillowDataset(Dataset):
+    def __init__(self, data_path, scale=0, year=2016):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
+        self.data_path = data_path
+        self.df = pd.read_csv(os.path.join(data_path, f'properties_{year}.csv'))
+        self.df.dropna(subset=['latitude', 'longitude', 'taxamount'],inplace=True)
+        self.df.reset_index(drop=True, inplace=True)
+
+        self.loc = self.df[['longitude', 'latitude']].values
+        self.label = self.df['taxamount']
+        self.num_classes = 0
+
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        loc = loc / 1e6
+        label = torch.tensor(self.label[index]).double()
+        return loc,self.curr_scale,label        
+
+    def __len__(self):
+        return len(self.label)
+
         
 
 if __name__ == '__main__':
 
-    inat_mini_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat_mini'
-    inat_mini_dataset = INatMini(inat_mini_path, scale=0,type='train')
+    data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/zillow_housing'
+    zillow_dataset = ZillowDataset(data_path, scale=0, year=2016)
+    import code; code.interact(local=dict(globals(), **locals()))
+    # inat_mini_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat_mini'
+    # inat_mini_dataset = INatMini(inat_mini_path, scale=0,type='train')
     # nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
     # nabird_dataset = NaBirdDataset(nabird_data_path, scale=0)
     # import code; code.interact(local=dict(globals(), **locals()))
