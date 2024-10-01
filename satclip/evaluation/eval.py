@@ -44,7 +44,7 @@ def get_args():
     parser.add_argument('--k', type=int, default=1, help='Number of nearest neighbors to consider for RANF')
     #dataset arguments
     parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
-                        choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds'])
+                        choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds', 'inat-mini'])
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/eval_data')
     parser.add_argument('--scale', type=int, help='Scale for the location', choices=[0,1,3,5], default=0)
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
@@ -154,6 +154,12 @@ def evaluate_npz(args):
         print('Top-k Classification Model')
         clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10, 
         scoring=top_k_scorer)
+    elif 'inat' in args.task_name:
+        #create the scorer
+        print('Top-100 Classification Model')
+        top_k_scorer = sklearn.metrics.make_scorer(top_k_accuracy_score, k=100)
+        clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10, 
+        scoring=top_k_scorer)
     else:
         print('Regression Model')
         clf = RidgeCV(alphas=(0.1, 1.0, 10.0), cv=10)
@@ -162,7 +168,7 @@ def evaluate_npz(args):
     train_embeddings = scaler.fit_transform(train_embeddings)
     val_embeddings = scaler.transform(val_embeddings)
     #run the classifier
-    clf.fit(val_embeddings, val_labels)
+    clf.fit(train_embeddings, train_labels)
     val_accuracy = clf.score(val_embeddings, val_labels)
     print(f'The validation set accuracy is {val_accuracy}')
     return val_accuracy
@@ -223,6 +229,11 @@ def rad_to_cart(locations):
     xyz = np.stack([x, y, z], axis=1)
     return xyz
 
+#inflection point defines at which distance we want to weight 0.5
+def shifted_sigmoid(x, inflection_point=15):
+    shifted = a-inflection_point
+    return 1-shifted.sigmoid()
+
 class LocationEncoder(nn.Module):
     def __init__(self, args):
         super().__init__()
@@ -270,7 +281,7 @@ class LocationEncoder(nn.Module):
             self.db_locs_xyz = rad_to_cart(self.db_locs)
             
             #create index for the satclip embeddings
-            self.db_satclip_index = faiss.IndexFlatIP(self.db_satclip_embeddings.shape[1])
+            self.db_satclip_index = faiss.IndexFlatL2(self.db_satclip_embeddings.shape[1])
             faiss.normalize_L2(self.db_satclip_embeddings.astype(np.float32))
             self.db_satclip_index.add(self.db_satclip_embeddings)
             #select which version of RANF to use
