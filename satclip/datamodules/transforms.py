@@ -177,12 +177,12 @@ def get_sapclip_uni_transform(resize_crop_size=256,scale_encoding='onehot', scal
             scale_ratio=[1/3,1/3,1/3], crop_type='resized'):
     augmentation = T.Compose([
         T.RandomCrop(resize_crop_size),
-        T.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
         T.RandomVerticalFlip(),
         T.RandomHorizontalFlip(),
         T.GaussianBlur(3),
-        T.ToTensor()
+        T.ToTensor(),
+        T.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
     ])
     crop_type = crop_type
     if crop_type == 'resized':
