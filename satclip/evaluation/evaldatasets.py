@@ -159,7 +159,7 @@ class Population_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
-class NaBirdDataset(Dataset):
+class NaBird_Dataset(Dataset):
     def __init__(self, data_path,scale=0,type='val'):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
@@ -199,7 +199,7 @@ class NaBirdDataset(Dataset):
     def __len__(self):
         return len(self.label)    
 
-class INatMiniDataset(Dataset):
+class INatMini_Dataset(Dataset):
     def __init__(self, data_path,scale=0,type='val'):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
@@ -233,13 +233,13 @@ class INatMiniDataset(Dataset):
     def __len__(self):
         return len(self.label)  
 
-class ZillowDataset(Dataset):
-    def __init__(self, data_path, scale=0, year=2016):
+class Zillow_Dataset(Dataset):
+    def __init__(self, data_path, scale=0):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
-        self.df = pd.read_csv(os.path.join(data_path, f'properties_{year}.csv'))
+        self.df = pd.read_csv(self.data_path)
         self.df.dropna(subset=['latitude', 'longitude', 'taxamount'],inplace=True)
         self.df.reset_index(drop=True, inplace=True)
 
@@ -266,7 +266,7 @@ if __name__ == '__main__':
     # inat_mini_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat_mini'
     # inat_mini_dataset = INatMini(inat_mini_path, scale=0,type='train')
     # nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
-    # nabird_dataset = NaBirdDataset(nabird_data_path, scale=0)
+    # nabird_dataset = NaBird_Dataset(nabird_data_path, scale=0)
     # import code; code.interact(local=dict(globals(), **locals()))
     # biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
     # biome_dataset = Biome_Dataset(biome_data_path, scale=1)
