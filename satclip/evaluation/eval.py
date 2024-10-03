@@ -245,6 +245,7 @@ def shifted_sigmoid(x, inflection_point=15):
     shifted = a-inflection_point
     return 1-shifted.sigmoid()
 
+
 class LocationEncoder(nn.Module):
     def __init__(self, args):
         super().__init__()
@@ -378,6 +379,8 @@ class LocationEncoder(nn.Module):
                 ang_top_indices = ang_top_indices.cpu()
                 angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[ang_top_indices]
                 angular_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
+                #get the havesine distance between the query and the top k locations
+                
                 #get average semantic and distace based embeddings
                 averaged_high_res_embeddings = (high_res_embeddings + angular_high_res_embeddings)/2
                 loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)

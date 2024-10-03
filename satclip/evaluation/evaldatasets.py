@@ -260,15 +260,15 @@ class Zillow_Dataset(Dataset):
 
 if __name__ == '__main__':
 
-    data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/zillow_housing'
-    zillow_dataset = ZillowDataset(data_path, scale=0, year=2016)
-    import code; code.interact(local=dict(globals(), **locals()))
+    # data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/zillow_housing'
+    # zillow_dataset = ZillowDataset(data_path, scale=0, year=2016)
+    # import code; code.interact(local=dict(globals(), **locals()))
     # inat_mini_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat_mini'
     # inat_mini_dataset = INatMini(inat_mini_path, scale=0,type='train')
-    # nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
-    # nabird_dataset = NaBird_Dataset(nabird_data_path, scale=0)
-    # import code; code.interact(local=dict(globals(), **locals()))
-    # biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
+    nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
+    nabird_dataset = NaBird_Dataset(nabird_data_path, scale=0)
+    import code; code.interact(local=dict(globals(), **locals()))
+    biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
     # biome_dataset = Biome_Dataset(biome_data_path, scale=1)
     # temp_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/temp.csv'
     # temp_dataset = Temp_Dataset(temp_data_path,scale=3)
