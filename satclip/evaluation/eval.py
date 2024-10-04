@@ -240,11 +240,28 @@ def rad_to_cart(locations):
     xyz = np.stack([x, y, z], axis=1)
     return xyz
 
+def my_sigmoid(x):
+    return 1/(1+np.exp(-x))
 #inflection point defines at which distance we want to weight 0.5
-def shifted_sigmoid(x, inflection_point=15):
+def shifted_sigmoid(a, inflection_point=15):
     shifted = a-inflection_point
-    return 1-shifted.sigmoid()
+    return 1-my_sigmoid(shifted)
 
+def compute_haversine(X, Y, radians=False):
+    lon_1 = X[:,0]
+    lat_1 = X[:,1]
+    lon_2 = Y[:,0]
+    lat_2 = Y[:,1]
+    if not radians:
+        lon_1 = lon_1 * math.pi/180
+        lat_1 = lat_1 * math.pi/180
+        lon_2 = lon_2 * math.pi/180
+        lat_2 = lat_2 * math.pi/180
+    #compute the distance
+    a = np.sin((lat_2-lat_1)/2)**2 + np.cos(lat_1)*np.cos(lat_2)*np.sin((lon_2-lon_1)/2)**2
+    c = 2*np.arctan2(np.sqrt(a), np.sqrt(1-a))
+    d = EARTH_RADIUS*c
+    return d
 
 class LocationEncoder(nn.Module):
     def __init__(self, args):
@@ -315,9 +332,9 @@ class LocationEncoder(nn.Module):
                 print('Using RANF_HAVER')
                 self.location_feature_dim=1024+256
                 #create the faiss index for the cartesian coordinates
-                self.db_locs_index = faiss.IndexFlatL2(3)
-                faiss.normalize_L2(self.db_locs_xyz.astype(np.float32))
-                self.db_locs_index.add(self.db_locs_xyz)
+                # self.db_locs_index = faiss.IndexFlatL2(3)
+                # faiss.normalize_L2(self.db_locs_xyz.astype(np.float32))
+                # self.db_locs_index.add(self.db_locs_xyz)
 
 
                 
@@ -379,10 +396,18 @@ class LocationEncoder(nn.Module):
                 ang_top_indices = ang_top_indices.cpu()
                 angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[ang_top_indices]
                 angular_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
-                #get the havesine distance between the query and the top k locations
+                #get the weight for the embeddings
                 
+                db_locations = self.db_locs_latlon[ang_top_indices][:,0,:]
+                data_location = coords.cpu().numpy().astype(np.float32)
+                #get the havesine distance between the query and the top k locations
+
+                haver_dist = compute_haversine(db_locations,data_location, radians=False)
+                #compute the shifted sigmoid weights
+                haver_weights = torch.tensor(shifted_sigmoid(haver_dist, inflection_point=-5)).view(-1,1)
+                semantic_weights = 2-haver_weights
                 #get average semantic and distace based embeddings
-                averaged_high_res_embeddings = (high_res_embeddings + angular_high_res_embeddings)/2
+                averaged_high_res_embeddings = (semantic_weights*high_res_embeddings + haver_weights*angular_high_res_embeddings)/2
                 loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
             else:
                 raise ValueError('Unimplemented RANF')
