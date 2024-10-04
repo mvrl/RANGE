@@ -392,23 +392,23 @@ class LocationEncoder(nn.Module):
                 #get corresponding highres embeddings
                 # angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[I_ang]
                 
-                ang_top_values, ang_top_indices = torch.topk(angular_similarity, k=1, dim=1)
+                ang_top_values, ang_top_indices = torch.topk(angular_similarity, k=args.k, dim=1)
                 ang_top_indices = ang_top_indices.cpu()
                 angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[ang_top_indices]
                 angular_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
                 #get the weight for the embeddings
                 
-                db_locations = self.db_locs_latlon[ang_top_indices][:,0,:]
-                data_location = coords.cpu().numpy().astype(np.float32)
-                #get the havesine distance between the query and the top k locations
+                # db_locations = self.db_locs_latlon[ang_top_indices][:,0,:]
+                # data_location = coords.cpu().numpy().astype(np.float32)
+                # #get the havesine distance between the query and the top k locations
 
-                haver_dist = compute_haversine(db_locations,data_location, radians=False)
-                #compute the shifted sigmoid weights
-                haver_weights = torch.tensor(shifted_sigmoid(haver_dist, inflection_point=-5)).view(-1,1)
-                semantic_weights = 2-haver_weights
-                #get average semantic and distace based embeddings
-                averaged_high_res_embeddings = (semantic_weights*high_res_embeddings + haver_weights*angular_high_res_embeddings)/2
-                loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
+                # haver_dist = compute_haversine(db_locations,data_location, radians=False)
+                # #compute the shifted sigmoid weights
+                # haver_weights = torch.tensor(shifted_sigmoid(haver_dist, inflection_point=-5)).view(-1,1)
+                # semantic_weights = 2-haver_weights
+                # #get average semantic and distace based embeddings
+                # averaged_high_res_embeddings = (semantic_weights*high_res_embeddings + haver_weights*angular_high_res_embeddings)/2
+                loc_embeddings = np.concatenate((angular_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
             else:
                 raise ValueError('Unimplemented RANF')
 
