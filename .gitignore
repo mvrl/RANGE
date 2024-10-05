@@ -7,4 +7,4 @@ satclip/precompute_satclip.py
 satclip/location_model/
 run_eval.py
 run_job.sh
-
+satclip/location_models/
