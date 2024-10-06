@@ -29,6 +29,10 @@ from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Data
 #loading different location models
 from ..load import get_satclip
 from geoclip import LocationEncoder as GeoCLIP #input as lat,long
+from ..location_models.csp.load_csp import get_csp
+from ..location_models.GPS2Vec.get_gps2vec import get_gps2vec
+from ..positional_encoding.theory import Theory
+from ..positional_encoding.wrap import Wrap
 
 import warnings
 
@@ -263,6 +267,13 @@ def compute_haversine(X, Y, radians=False):
     d = EARTH_RADIUS*c
     return d
 
+#Dummy location encoder
+class DummyLocationEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, coords):
+        return coords
+
 class LocationEncoder(nn.Module):
     def __init__(self, args):
         super().__init__()
@@ -294,7 +305,42 @@ class LocationEncoder(nn.Module):
             ckpt = torch.load('/projects/bdec/adhakal2/hyper_satclip/data/models/patched_location_encoder.pt', map_location=args.device)
             self.loc_model.load_state_dict(ckpt)
             self.location_feature_dim = 512
-        #RANF
+        #CSP_FMOW
+        elif self.location_model_name == 'CSP':
+            print('Using CSP-FMOW')
+            self.loc_model = get_csp(path='/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/csp/model_dir/model_fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar')
+            self.location_feature_dim = 256
+        #CSP INAT
+        elif self.location_model_name == 'CSP_INat':
+            print('Using CSP_INat')
+            self.loc_model = get_csp(path='/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/csp/model_dir/model_inat_2018/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar')
+            self.location_feature_dim = 256
+        #GPS2Vec
+        elif self.location_model_name == 'GPS2Vec_visual':
+            print('Using GPS2Vec_visual')
+            self.loc_model = visual
+            self.location_feature_dim = 512
+        #Direct
+        elif self.location_model_name == 'Direct':
+            print('Using Direct Encoding')
+            self.loc_model = DummyLocationEncoder()
+            self.location_feature_dim = 2
+        #Cartesian_3D
+        elif self.location_model_name == 'Cartesian_3D':
+            print('Using Cartesian_3D')
+            self.loc_model = DummyLocationEncoder()
+            self.location_feature_dim = 3
+        #Theory
+        elif self.location_model_name == 'Theory':
+            print('Using Theory')
+            self.loc_model = Theory()
+            self.location_feature_dim = 0
+        #Wrap
+        elif self.location_model_name == 'Wrap':
+            print('Using Wrap')
+            self.loc_model = Wrap()
+            self.location_feature_dim = 4
+            
         elif 'RANF' in self.location_model_name:
             #get satcilp location encoder
             self.loc_model = get_satclip(
@@ -315,11 +361,7 @@ class LocationEncoder(nn.Module):
             if args.device=='cuda':
                 self.db_satclip_embeddings = torch.tensor(self.db_satclip_embeddings).to(args.device)
                 self.db_locs_xyz = torch.tensor(self.db_locs_xyz).to(args.device)
-            #create index for the satclip embeddings
-            # self.db_satclip_index = faiss.IndexFlatIP(self.db_satclip_embeddings.shape[1])
-            # faiss.normalize_L2(self.db_satclip_embeddings.astype(np.float32))
-            # self.db_satclip_index.add(self.db_satclip_embeddings)
-            #select which version of RANF to use
+
             if self.location_model_name=='RANF':
                 print('Using RANF')
                 self.location_feature_dim=1024
@@ -335,11 +377,16 @@ class LocationEncoder(nn.Module):
                 # self.db_locs_index = faiss.IndexFlatL2(3)
                 # faiss.normalize_L2(self.db_locs_xyz.astype(np.float32))
                 # self.db_locs_index.add(self.db_locs_xyz)
+            #combine semantic and distance based embeddings
+            elif self.location_model_name=='RANF_COMBINED':
+                print('Using RANF_COMBINED')
+                self.location_feature_dim=1024+256  
 
-
-                
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
+        self.loc_model.eval()
+        for params in self.loc_model.parameters():
+            params.requires_grad=False
 
     #return the location embeddings
     def forward(self, coords, scale):
@@ -350,8 +397,21 @@ class LocationEncoder(nn.Module):
         elif self.location_model_name == 'GeoCLIP':
             coords = coords[:,[1,0]]
             loc_embeddings = self.loc_model(coords)
+        elif 'CSP' in self.location_model_name:
+            loc_embeddings = self.loc_model(coords, return_feats=True)
         elif self.location_model_name == 'TaxaBind':
             coords = coords[:,[1,0]]
+            loc_embeddings = self.loc_model(coords)
+        elif self.location_model_name == 'Direct':
+            coords_rad = coords * math.pi/180
+            loc_embeddings = self.loc_model(coords_rad)
+        elif self.location_model_name == 'Cartesian_3D':
+            coords_rad = coords * math.pi/180
+            coords_cart = rad_to_cart(coords_rad.cpu().numpy())
+            loc_embeddings = self.loc_model(coords_cart)
+        elif self.location_model_name == 'Theory':
+            loc_embeddings = self.loc_model(coords)
+        elif self.location_model_name == 'Wrap':
             loc_embeddings = self.loc_model(coords)
         elif 'RANF' in self.location_model_name:
             #get the satclip embeddings for the given location
@@ -379,7 +439,7 @@ class LocationEncoder(nn.Module):
             #concatenate rich image features with low res location features
             elif self.location_model_name=='RANF_HILO':
                 loc_embeddings = np.concatenate((high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
-            elif self.location_model_name=='RANF_HAVER':
+            elif self.location_model_name=='RANF_HAVER' or self.location_model_name=='RANF_COMBINED':
                 #lon, lat
                 query_locations_latlon = coords.cpu().numpy()
                 #convert to radians
@@ -396,6 +456,11 @@ class LocationEncoder(nn.Module):
                 ang_top_indices = ang_top_indices.cpu()
                 angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[ang_top_indices]
                 angular_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
+                if self.location_model_name=='RANF_HAVER':
+                    loc_embeddings = np.concatenate((angular_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
+                elif self.location_model_name=='RANF_COMBINED':
+                    averaged_high_res_embeddings = (angular_high_res_embeddings + high_res_embeddings)/2
+                    loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
                 #get the weight for the embeddings
                 
                 # db_locations = self.db_locs_latlon[ang_top_indices][:,0,:]
@@ -408,7 +473,7 @@ class LocationEncoder(nn.Module):
                 # semantic_weights = 2-haver_weights
                 # #get average semantic and distace based embeddings
                 # averaged_high_res_embeddings = (semantic_weights*high_res_embeddings + haver_weights*angular_high_res_embeddings)/2
-                loc_embeddings = np.concatenate((angular_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
+                # loc_embeddings = np.concatenate((angular_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
             else:
                 raise ValueError('Unimplemented RANF')
 
