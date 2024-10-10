@@ -315,11 +315,20 @@ class LocationEncoder(nn.Module):
             print('Using CSP_INat')
             self.loc_model = get_csp(path='/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/csp/model_dir/model_inat_2018/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar')
             self.location_feature_dim = 256
-        #GPS2Vec
+        #GPS2Vec visual
         elif self.location_model_name == 'GPS2Vec_visual':
             print('Using GPS2Vec_visual')
-            self.loc_model = visual
-            self.location_feature_dim = 512
+            self.loc_model = DummyLocationEncoder()
+            self.vectype = 'visual'
+            self.gps2vec_basedir = '/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/GPS2Vec'
+            self.location_feature_dim = 1365
+        #GPS2Vec tag
+        elif self.location_model_name == 'GPS2Vec_tag':
+            print('Using GPS2Vec_tag')
+            self.loc_model = DummyLocationEncoder()
+            self.gps2vec_basedir = '/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/GPS2Vec'
+            self.vectype = 'tag'
+            self.location_feature_dim = 2000    
         #Direct
         elif self.location_model_name == 'Direct':
             print('Using Direct Encoding')
@@ -399,6 +408,10 @@ class LocationEncoder(nn.Module):
             loc_embeddings = self.loc_model(coords)
         elif 'CSP' in self.location_model_name:
             loc_embeddings = self.loc_model(coords, return_feats=True)
+        elif 'GPS2Vec' in self.location_model_name:
+            import code; code.interact(local=dict(globals(), **locals()))
+            loc_embeddings = get_gps2vec(np.flip(coords.numpy(),1),
+            self.gps2vec_basedir,model=self.vectype)
         elif self.location_model_name == 'TaxaBind':
             coords = coords[:,[1,0]]
             loc_embeddings = self.loc_model(coords)
