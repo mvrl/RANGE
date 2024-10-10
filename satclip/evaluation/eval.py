@@ -359,6 +359,7 @@ class LocationEncoder(nn.Module):
             ranf_db = np.load(args.ranf_db)
             self.db_locs_latlon = ranf_db['locs'].astype(np.float32)
             self.db_satclip_embeddings = ranf_db['satclip_embeddings'].astype(np.float32)
+            self.db_satclip_embeddings = self.db_satclip_embeddings/np.linalg.norm(self.db_satclip_embeddings, ord=2, axis=1, keepdims=True)
             self.db_high_resolution_satclip_embeddings = torch.tensor(ranf_db['image_embeddings'].astype(np.float32))
             
             #convert lon, lat to radians
@@ -429,12 +430,14 @@ class LocationEncoder(nn.Module):
         elif 'RANF' in self.location_model_name:
             #get the satclip embeddings for the given location
             curr_loc_embeddings = self.loc_model(coords).to(args.device)
+            #normalize the embeddings
+            curr_loc_embeddings = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
             high_res_similarity = curr_loc_embeddings.float() @ self.db_satclip_embeddings.t()
             top_values, top_indices = torch.topk(high_res_similarity, k=args.k, dim=1)
             top_indices = top_indices.cpu()
             # D,I = self.db_satclip_index.search(curr_loc_embeddings, self.k) 
             #normalize the embeddings
-            # curr_loc_embeddings_norm = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
+            # curr_loc_embeddings_import code; code.interact(local=dict(globals(), **locals()) = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
             # db_satclip_embeddings_norm = self.db_satclip_embeddings/self.db_satclip_embeddings.norm(p=2, dim=-1, keepdim=True)
             
             # # Compute cosine similarity between loc_embeddings and db_satclip_embeddings
