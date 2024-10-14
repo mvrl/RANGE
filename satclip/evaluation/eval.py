@@ -356,7 +356,7 @@ class LocationEncoder(nn.Module):
                     hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
                 device=args.device).double()
             #load the database
-            ranf_db = np.load(args.ranf_db)
+            ranf_db = np.load(args.ranf_db, allow_pickle=True)
             self.db_locs_latlon = ranf_db['locs'].astype(np.float32)
             self.db_satclip_embeddings = ranf_db['satclip_embeddings'].astype(np.float32)
             self.db_satclip_embeddings = self.db_satclip_embeddings/np.linalg.norm(self.db_satclip_embeddings, ord=2, axis=1, keepdims=True)
@@ -383,14 +383,17 @@ class LocationEncoder(nn.Module):
             elif self.location_model_name=='RANF_HAVER':
                 print('Using RANF_HAVER')
                 self.location_feature_dim=1024+256
-                #create the faiss index for the cartesian coordinates
-                # self.db_locs_index = faiss.IndexFlatL2(3)
-                # faiss.normalize_L2(self.db_locs_xyz.astype(np.float32))
-                # self.db_locs_index.add(self.db_locs_xyz)
             #combine semantic and distance based embeddings
             elif self.location_model_name=='RANF_COMBINED':
                 print('Using RANF_COMBINED')
                 self.location_feature_dim=1024+256  
+            #clustered based RANF
+            elif self.location_model_name=='RANF_CLUSTER':
+                print('Using RANF_CLUSTER')
+                self.cluster_sizes = ranf_db['cluster_sizes']
+                self.args.k = 1
+                args.k = 1
+                self.location_feature_dim=1024+256
 
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
@@ -433,18 +436,8 @@ class LocationEncoder(nn.Module):
             #normalize the embeddings
             curr_loc_embeddings = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
             high_res_similarity = curr_loc_embeddings.float() @ self.db_satclip_embeddings.t()
-            top_values, top_indices = torch.topk(high_res_similarity, k=args.k, dim=1)
+            top_values, top_indices = torch.topk(high_res_similarity, k=self.args.k, dim=1)
             top_indices = top_indices.cpu()
-            # D,I = self.db_satclip_index.search(curr_loc_embeddings, self.k) 
-            #normalize the embeddings
-            # curr_loc_embeddings_import code; code.interact(local=dict(globals(), **locals()) = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
-            # db_satclip_embeddings_norm = self.db_satclip_embeddings/self.db_satclip_embeddings.norm(p=2, dim=-1, keepdim=True)
-            
-            # # Compute cosine similarity between loc_embeddings and db_satclip_embeddings
-            # similarities = curr_loc_embeddings_norm @ db_satclip_embeddings_norm.t()
-
-            # # Find the index of the most similar satclip_embedding for each loc_embedding
-            # most_similar_indices = np.argmax(similarities, axis=1)
             
             # Get the corresponding highres_embeddings
             high_res_embeddings = self.db_high_resolution_satclip_embeddings[top_indices]
@@ -453,7 +446,7 @@ class LocationEncoder(nn.Module):
             if self.location_model_name=='RANF':
                 loc_embeddings = high_res_embeddings
             #concatenate rich image features with low res location features
-            elif self.location_model_name=='RANF_HILO':
+            elif self.location_model_name=='RANF_HILO' or self.location_model_name=='RANF_CLUSTER':
                 loc_embeddings = np.concatenate((high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
             elif self.location_model_name=='RANF_HAVER' or self.location_model_name=='RANF_COMBINED':
                 #lon, lat
@@ -468,7 +461,7 @@ class LocationEncoder(nn.Module):
                 #get corresponding highres embeddings
                 # angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[I_ang]
                 
-                ang_top_values, ang_top_indices = torch.topk(angular_similarity, k=args.k, dim=1)
+                ang_top_values, ang_top_indices = torch.topk(angular_similarity, k=self.args.k, dim=1)
                 ang_top_indices = ang_top_indices.cpu()
                 angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[ang_top_indices]
                 angular_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)

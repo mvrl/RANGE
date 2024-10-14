@@ -70,10 +70,9 @@ if __name__ == '__main__':
             clustered_locations[i].extend([padding_element]*padding_needed)
     clustered_locations = np.array(clustered_locations)
     #save the data
-    np.savez(f'{os.path.dirname(args.data_path)}/{args.num_clusters}-clustered_data.npz',
-             clustered_locations=clustered_locations,
-             clustered_satclip_means=clustered_satclip_means.numpy(),
-             clustered_image_means=clustered_image_means.numpy(),
+    np.savez(f'{os.path.dirname(args.data_path)}/{args.num_clusters}-clustered_satmae_db.npz',
+             locs=clustered_locations,
+             satclip_embeddings=clustered_satclip_means.numpy(),
+             image_embeddings=clustered_image_means.numpy(),
              cluster_sizes=cluster_sizes)
-    import code; code.interact(local=dict(globals(), **locals()))
 
