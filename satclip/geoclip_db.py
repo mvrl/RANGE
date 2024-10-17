@@ -6,8 +6,45 @@ from tqdm import tqdm
 import os
 from geoclip import LocationEncoder, ImageEncoder
 from transformers import CLIPModel, AutoProcessor
+from sklearn.model_selection import StratifiedShuffleSplit
+from collections import Counter
+
 import pandas as pd
 from PIL import Image
+import sys
+#stratified sampling based on bin_ids. Ignores all data that has only one sample
+def stratified_sample(data, num_samples):
+    locs = data['locs']
+    bin_ids = data['bin_id']
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=num_samples, random_state=42)
+    #count the bins and filter out those with only one
+    bin_counts = Counter(bin_ids)
+    valid_bins = [bin_ for bin_ in bin_counts if bin_counts[bin_] >= 2]
+    
+    # Create a mask for valid samples (belonging to valid_bins)
+    valid_mask = np.isin(bin_ids, valid_bins)
+    
+    #filter the data to only include valid samples
+    filtered_img_embeddings = data['image_embeddings'][valid_mask]
+    filtered_geoclip_embeddings = data['geoclip_embeddings'][valid_mask]
+    filtered_bin_ids = data['bin_id'][valid_mask]
+    filtered_locs = data['locs'][valid_mask]
+
+    #Extract the indices
+    for _, sample_indices in sss.split(filtered_locs, filtered_bin_ids):
+        sampled_image_embeddings = filtered_img_embeddings[sample_indices]
+        sampled_geoclip_embeddings = filtered_geoclip_embeddings[sample_indices]
+        sampled_bin_ids = filtered_bin_ids[sample_indices]
+        sampled_locs = filtered_locs[sample_indices]
+    
+    np.savez(f'/projects/bdec/adhakal2/hyper_satclip/data/models/ranf_geoclip/ranf_geoclip_stratified_{num_samples}.npz',
+             image_embeddings=sampled_image_embeddings,
+             geoclip_embeddings=sampled_geoclip_embeddings,
+             bin_id=sampled_bin_ids,
+             locs=sampled_locs)
+
+    sys.exit()
+    
 
 def filter_csv(csv_path, img_path):
     #load the original csv
@@ -59,6 +96,8 @@ class GEOCLIP_FORWARD(nn.Module):
 
 if __name__ == '__main__':
     #load the original csv
+    data = np.load('/projects/bdec/adhakal2/hyper_satclip/data/models/ranf_geoclip/ranf_geoclip_binned_db.npz')
+    stratified_sample(data, 100000)
     csv_path = '/projects/bdec/adhakal2/hyper_satclip/data/geoclip_data/mp16_healpix_32.csv'
     img_path = '/projects/bdec/adhakal2/hyper_satclip/data/geoclip_data/MP-16/images'
     batch_size = 400

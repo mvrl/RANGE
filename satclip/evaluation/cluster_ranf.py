@@ -1,7 +1,7 @@
 import numpy as np
 import os
 import argparse
-from cuml.cluster import AgglomerativeClustering, KMeans
+from cuml.cluster import AgglomerativeClustering, KMeans, DBSCAN
 
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
@@ -13,6 +13,8 @@ def get_args():
     args = argparse.ArgumentParser()
     args.add_argument('--data_path', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/models/ranf/ranf_satmae_db.npz')
     args.add_argument('--num_clusters', type=int, default=200)
+    args.add_argument('--ranf_model', type=str, default='GeoCLIP')
+    args.add_argument('--cluster_type', choices=['kmeans', 'hierarchical', 'dbscan'])
     return args.parse_args()
 
 if __name__ == '__main__':
@@ -21,22 +23,43 @@ if __name__ == '__main__':
     # Unpack the columns
     locations = torch.tensor(data['locs'])             # List of location data
     image_embeddings = torch.tensor(data['image_embeddings'])  # Stack image_embeddings into a 2D array
-    satclip_embeddings = torch.tensor(data['satclip_embeddings'])  # Stack satclip_embeddings into a 2D array
-
+    
+    if args.ranf_model == 'GeoCLIP':
+        lowres_embeddings = torch.tensor(data['geoclip_embeddings'])  # Stack satclip_embeddings into a 2D array
+    elif args.ranf_model == 'SatCLIP':
+        lowres_embeddings = torch.tensor(data['satclip_embeddings'])
+    else:    
+        raise ValueError('Invalid model type. Choose between GeoCLIP and SatCLIP')
     # Compute pairwise distances between image embeddings
-    satclip_embeddings = satclip_embeddings / satclip_embeddings.norm(p=2, dim=1, keepdim=True)
+    lowres_embeddings = lowres_embeddings / lowres_embeddings.norm(p=2, dim=1, keepdim=True)
     #perform clusterning
-    clustering =  KMeans(n_clusters=args.num_clusters, max_iter=10000)
-    clusters = clustering.fit_predict(satclip_embeddings.numpy())
+    if args.cluster_type == 'kmeans':
+        clustering =  KMeans(n_clusters=args.num_clusters, max_iter=10000, verbose=4)
+        clusters = clustering.fit_predict(lowres_embeddings.numpy())
+    elif args.cluster_type == 'dbscan':
+        clustering = DBSCAN(eps=1.02, min_samples=512)
+        clusters = clustering.fit_predict(lowres_embeddings.numpy(), out_dtype=np.int64)
+    elif args.cluster_type == 'hierarchical':
+        clustering = AgglomerativeClustering(n_clusters=args.num_clusters, metric='cosine', connectivity='pairwise')    
+    else:
+        raise ValueError('Invalid clustering type')
+
+    
+    import code; code.interact(local=dict(globals(), **locals()))
     #aggregate the data by clusters
+    #get the unique clusters
     unique_clusters = np.unique(clusters)
+    #get the count per cluster
+    count_cluster = Counter(clusters)
     clustered_locations = []
-    clustered_satclip_means = []
+    clustered_lowres_means = []
     clustered_image_means = []
     cluster_sizes = []
 
     for cluster in unique_clusters:
         # Get indices of samples in this cluster
+        if count_cluster[cluster] < 100:
+            continue
         cluster_indices = np.where(clusters == cluster)[0]
         
         # Aggregate locations
@@ -44,8 +67,8 @@ if __name__ == '__main__':
         clustered_locations.append(cluster_locations)
         
         # Compute mean of satclip_embeddings for the cluster
-        mean_satclip = satclip_embeddings[cluster_indices].mean(dim=0)
-        clustered_satclip_means.append(mean_satclip)
+        mean_lowres = lowres_embeddings[cluster_indices].mean(dim=0)
+        clustered_lowres_means.append(mean_lowres)
         
         # Compute mean of image_embeddings for the cluster
         mean_image = image_embeddings[cluster_indices].mean(dim=0)
@@ -57,7 +80,7 @@ if __name__ == '__main__':
     
     #concatenate the data
     
-    clustered_satclip_means = torch.stack(clustered_satclip_means)
+    clustered_satclip_means = torch.stack(clustered_lowres_means)
     clustered_image_means = torch.stack(clustered_image_means)
     cluster_sizes = np.array(cluster_sizes).reshape(-1,1)
     #pad the locations
@@ -70,9 +93,15 @@ if __name__ == '__main__':
             clustered_locations[i].extend([padding_element]*padding_needed)
     clustered_locations = np.array(clustered_locations)
     #save the data
-    np.savez(f'{os.path.dirname(args.data_path)}/{args.num_clusters}-clustered_satmae_db.npz',
+    if args.ranf_model=='GeoCLIP':
+        np.savez(f'{os.path.dirname(args.data_path)}/{args.cluster_type}-{args.num_clusters}-clustered_db.npz',
+             locs=clustered_locations,
+             geoclip_embeddings=clustered_satclip_means.numpy(),
+             image_embeddings=clustered_image_means.numpy(),
+             cluster_sizes=cluster_sizes)
+    elif args.ranf_model=='SatCLIP':
+        np.savez(f'{os.path.dirname(args.data_path)}/{args.cluster_type}-{args.num_clusters}-clustered_db.npz',
              locs=clustered_locations,
              satclip_embeddings=clustered_satclip_means.numpy(),
              image_embeddings=clustered_image_means.numpy(),
              cluster_sizes=cluster_sizes)
-

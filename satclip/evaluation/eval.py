@@ -45,6 +45,7 @@ def get_args():
     default='/projects/bdec/adhakal2/hyper_satclip/logs/SAPCLIP/0tflzztx/checkpoints/epoch=162-acc_eco=0.000.ckpt')
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SAPCLIP')
     parser.add_argument('--ranf_db', type=str, default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/models/ranf/ranf_satmae_db.npz')
+    parser.add_argument('--ranf_model', type=str, default='', choices=['GeoCLIP', 'SatCLIP',''])
     parser.add_argument('--k', type=int, default=1, help='Number of nearest neighbors to consider for RANF')
     #dataset arguments
     parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
@@ -76,7 +77,7 @@ def get_args():
 
 def save_embeddings(args, train_loader, val_loader, location_model):
     feature_dim = location_model.location_feature_dim
-    embeddings_dir = os.path.join(args.embeddings_dir, args.location_model_name, str(args.k))
+    embeddings_dir = os.path.join(args.embeddings_dir, args.ranf_model, args.location_model_name, str(args.k))
     #check if directory already exist for this model
     if not os.path.exists(embeddings_dir):
         print(f'Creating new directory {embeddings_dir}')
@@ -86,6 +87,7 @@ def save_embeddings(args, train_loader, val_loader, location_model):
     val_path = os.path.join(embeddings_dir, f'{args.task_name}_k-{args.k}_scale-{args.scale}_val.npz')
     #freeze the model
     location_model.eval()
+    location_model = location_model.to(args.device)
     with torch.no_grad():
         #first get the embeddings for the train data
         coords_list = []
@@ -136,8 +138,8 @@ def save_embeddings(args, train_loader, val_loader, location_model):
         print(f'File saved to {train_path} and {val_path}')
 
 def evaluate_npz(args):
-    train_path = os.path.join(args.embeddings_dir, args.location_model_name,str(args.k), args.task_name+'_k-'+str(args.k)+'_scale-'+str(args.scale)+'_train.npz')
-    val_path = os.path.join(args.embeddings_dir, args.location_model_name,str(args.k), args.task_name+'_k-'+str(args.k)+'_scale-'+str(args.scale)+'_val.npz')
+    train_path = os.path.join(args.embeddings_dir,args.ranf_model, args.location_model_name,str(args.k), args.task_name+'_k-'+str(args.k)+'_scale-'+str(args.scale)+'_train.npz')
+    val_path = os.path.join(args.embeddings_dir, args.ranf_model, args.location_model_name,str(args.k), args.task_name+'_k-'+str(args.k)+'_scale-'+str(args.scale)+'_val.npz')
     assert os.path.exists(train_path), f'Train embeddings file does not exist: {train_path}'
     assert os.path.exists(val_path), f'Val embeddings file does not exist: {val_path}'
     #get training data
@@ -358,8 +360,16 @@ class LocationEncoder(nn.Module):
             #load the database
             ranf_db = np.load(args.ranf_db, allow_pickle=True)
             self.db_locs_latlon = ranf_db['locs'].astype(np.float32)
-            self.db_satclip_embeddings = ranf_db['satclip_embeddings'].astype(np.float32)
-            self.db_satclip_embeddings = self.db_satclip_embeddings/np.linalg.norm(self.db_satclip_embeddings, ord=2, axis=1, keepdims=True)
+            if args.ranf_model == 'GeoCLIP':
+                self.db_satclip_embeddings = ranf_db['geoclip_embeddings'].astype(np.float32)
+                self.location_feature_dim = 512 + 768
+            elif args.ranf_model == 'SatCLIP':
+                self.db_satclip_embeddings = ranf_db['satclip_embeddings'].astype(np.float32)
+                self.location_feature_dim = 1024 + 256
+            else:
+                raise ValueError('Unimplemented RANF model. Should be GeoCLIP or SatCLIP')
+            
+            self.db_satclip_embeddings = torch.tensor(self.db_satclip_embeddings/np.linalg.norm(self.db_satclip_embeddings, ord=2, axis=1, keepdims=True))
             self.db_high_resolution_satclip_embeddings = torch.tensor(ranf_db['image_embeddings'].astype(np.float32))
             
             #convert lon, lat to radians
@@ -394,7 +404,11 @@ class LocationEncoder(nn.Module):
                 self.args.k = 1
                 args.k = 1
                 self.location_feature_dim=1024+256
-
+            #ranf using geoclip
+            #get the geoclip location encoder
+            self.loc_model = GeoCLIP().double()
+            self.location_feature_dim = 512 + 768
+        
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
         self.loc_model.eval()
@@ -413,7 +427,6 @@ class LocationEncoder(nn.Module):
         elif 'CSP' in self.location_model_name:
             loc_embeddings = self.loc_model(coords, return_feats=True)
         elif 'GPS2Vec' in self.location_model_name:
-            import code; code.interact(local=dict(globals(), **locals()))
             loc_embeddings = get_gps2vec(np.flip(coords.numpy(),1),
             self.gps2vec_basedir,model=self.vectype)
         elif self.location_model_name == 'TaxaBind':
