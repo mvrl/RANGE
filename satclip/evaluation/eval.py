@@ -47,6 +47,7 @@ def get_args():
     parser.add_argument('--ranf_db', type=str, default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--ranf_model', type=str, default='', choices=['GeoCLIP', 'SatCLIP',''])
     parser.add_argument('--k', type=int, default=1, help='Number of nearest neighbors to consider for RANF')
+    parser.add_argument('--temp', type=float, default=30, help='Temperature for the RANF model')
     #dataset arguments
     parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
                         choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds', 'inat-mini', 'zillow-2016', 'zillow-2017'])
@@ -353,17 +354,19 @@ class LocationEncoder(nn.Module):
             self.location_feature_dim = 4
             
         elif 'RANF' in self.location_model_name:
-            #get satcilp location encoder
-            self.loc_model = get_satclip(
-                    hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
-                device=args.device).double()
             #load the database
             ranf_db = np.load(args.ranf_db, allow_pickle=True)
             self.db_locs_latlon = ranf_db['locs'].astype(np.float32)
             if args.ranf_model == 'GeoCLIP':
-                self.db_satclip_embeddings = ranf_db['geoclip_embeddings'].astype(np.float32)
+                #get the geoclip location encoder
+                self.loc_model = GeoCLIP().double()
                 self.location_feature_dim = 512 + 768
+                self.db_satclip_embeddings = ranf_db['geoclip_embeddings'].astype(np.float32)
             elif args.ranf_model == 'SatCLIP':
+                #get satcilp location encoder
+                self.loc_model = get_satclip(
+                    hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
+                device=args.device).double()
                 self.db_satclip_embeddings = ranf_db['satclip_embeddings'].astype(np.float32)
                 self.location_feature_dim = 1024 + 256
             else:
@@ -405,9 +408,7 @@ class LocationEncoder(nn.Module):
                 args.k = 1
                 self.location_feature_dim=1024+256
             #ranf using geoclip
-            #get the geoclip location encoder
-            self.loc_model = GeoCLIP().double()
-            self.location_feature_dim = 512 + 768
+            
         
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
@@ -449,18 +450,21 @@ class LocationEncoder(nn.Module):
             #normalize the embeddings
             curr_loc_embeddings = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
             high_res_similarity = curr_loc_embeddings.float() @ self.db_satclip_embeddings.t()
-            top_values, top_indices = torch.topk(high_res_similarity, k=self.args.k, dim=1)
-            top_indices = top_indices.cpu()
-            
-            # Get the corresponding highres_embeddings
-            high_res_embeddings = self.db_high_resolution_satclip_embeddings[top_indices]
-            high_res_embeddings = high_res_embeddings.mean(axis=1)
+            if 'softmax' not in self.location_model_name:
+                top_values, top_indices = torch.topk(high_res_similarity, k=self.args.k, dim=1)
+                top_indices = top_indices.cpu() 
+                # Get the corresponding highres_embeddings
+                high_res_embeddings = self.db_high_resolution_satclip_embeddings[top_indices]
+                high_res_embeddings = high_res_embeddings.mean(axis=1)
+            elif 'softmax' in self.location_model_name:
+                high_res_similarity = torch.nn.functional.softmax(high_res_similarity * self.args.temp, dim=-1) #batch, num_db
+                high_res_embeddings = high_res_similarity @ self.db_high_resolution_satclip_embeddings.to(args.device) #batch, 1024
             #only send the rich image features
             if self.location_model_name=='RANF':
                 loc_embeddings = high_res_embeddings
             #concatenate rich image features with low res location features
-            elif self.location_model_name=='RANF_HILO' or self.location_model_name=='RANF_CLUSTER':
-                loc_embeddings = np.concatenate((high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
+            elif self.location_model_name=='RANF_HILO' or self.location_model_name=='RANF_CLUSTER' or self.location_model_name=='RANF_HILO_softmax':
+                loc_embeddings = np.concatenate((high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
             elif self.location_model_name=='RANF_HAVER' or self.location_model_name=='RANF_COMBINED':
                 #lon, lat
                 query_locations_latlon = coords.cpu().numpy()
@@ -483,19 +487,7 @@ class LocationEncoder(nn.Module):
                 elif self.location_model_name=='RANF_COMBINED':
                     averaged_high_res_embeddings = (angular_high_res_embeddings + high_res_embeddings)/2
                     loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
-                #get the weight for the embeddings
-                
-                # db_locations = self.db_locs_latlon[ang_top_indices][:,0,:]
-                # data_location = coords.cpu().numpy().astype(np.float32)
-                # #get the havesine distance between the query and the top k locations
-
-                # haver_dist = compute_haversine(db_locations,data_location, radians=False)
-                # #compute the shifted sigmoid weights
-                # haver_weights = torch.tensor(shifted_sigmoid(haver_dist, inflection_point=-5)).view(-1,1)
-                # semantic_weights = 2-haver_weights
-                # #get average semantic and distace based embeddings
-                # averaged_high_res_embeddings = (semantic_weights*high_res_embeddings + haver_weights*angular_high_res_embeddings)/2
-                # loc_embeddings = np.concatenate((angular_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
+            
             else:
                 raise ValueError('Unimplemented RANF')
 
