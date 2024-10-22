@@ -25,7 +25,7 @@ import sys
 import faiss
 #local import 
 from ..utils.load_model import load_checkpoint
-from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, NaBird_Dataset, INatMini_Dataset, Zillow_Dataset
+from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, NaBird_Dataset, INatMini_Dataset, MedianIncome_Dataset
 #loading different location models
 from ..load import get_satclip
 from geoclip import LocationEncoder as GeoCLIP #input as lat,long
@@ -44,20 +44,19 @@ def get_args():
     parser.add_argument('--ckpt_path', type=str, help='Path to the pretrained model',
     default='/projects/bdec/adhakal2/hyper_satclip/logs/SAPCLIP/0tflzztx/checkpoints/epoch=162-acc_eco=0.000.ckpt')
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SAPCLIP')
-    parser.add_argument('--ranf_db', type=str, default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/models/ranf/ranf_satmae_db.npz')
+    parser.add_argument('--ranf_db', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--ranf_model', type=str, default='', choices=['GeoCLIP', 'SatCLIP',''])
     parser.add_argument('--k', type=int, default=1, help='Number of nearest neighbors to consider for RANF')
-    parser.add_argument('--temp', type=float, default=30, help='Temperature for the RANF model')
     #dataset arguments
     parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
-                        choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds', 'inat-mini', 'zillow-2016', 'zillow-2017'])
-    parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/eval_data')
+                        choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds', 'inat-mini', 'income'])
+    parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
     parser.add_argument('--scale', type=int, help='Scale for the location', choices=[0,1,3,5], default=0)
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
     parser.add_argument('--num_workers', type=int, help='Number of workers', default=6)
 
     #logging arguments
-    parser.add_argument('--log_dir', type=str, help='Path to the log directory', default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/logs/downstream')
+    parser.add_argument('--log_dir', type=str, help='Path to the log directory', default='./')
     parser.add_argument('--run_name', type=str, help='Name of the run', default='downstream_eval')
     parser.add_argument('--project_name', type=str, help='Name of the project', default='Donwstream Evaluation')
     parser.add_argument('--wandb_mode', type=str, help='Mode of wandb', default='online')
@@ -68,7 +67,7 @@ def get_args():
     parser.add_argument('--dev_run', action='store_true', help='Run the model in dev mode')
     parser.add_argument('--learning_rate', type=float, default=1e-03)
     #saving embeddings
-    parser.add_argument('--embeddings_dir', type=str, default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/eval_data/embeddings')
+    parser.add_argument('--embeddings_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data/embeddings_norm')
     #eval type
     parser.add_argument('--eval_type', type=str, default='evaluate_npz', choices=['save_embeddings', 'evaluate_raw', 'evaluate_npz'])
     args = parser.parse_args()
@@ -171,6 +170,7 @@ def evaluate_npz(args):
         print('Regression Model')
         clf = RidgeCV(alphas=(0.1, 1.0, 10.0), cv=10)
     #normalize the embeddings
+    # import code; code.interact(local=dict(globals(), **locals()))
     scaler = MinMaxScaler()
     train_embeddings = scaler.fit_transform(train_embeddings)
     val_embeddings = scaler.transform(val_embeddings)
@@ -212,6 +212,11 @@ def get_dataset(args):
         dataset = Population_Dataset(data_path, args.scale)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
+    elif args.task_name == 'income':
+        data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/kaggle_income.csv'
+        dataset = MedianIncome_Dataset(data_path, args.scale)
+        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
+        num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'nabirds':
         data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
         dataset_train = NaBird_Dataset(data_path, args.scale, type='train')
@@ -222,16 +227,8 @@ def get_dataset(args):
         dataset_train = INatMini_Dataset(data_path, args.scale, type='train')
         dataset_val  = INatMini_Dataset(data_path, args.scale, type='val')
         num_classes = dataset_train.num_classes
-    elif args.task_name == 'zillow-2016':
-        data_path = os.path.join(args.eval_dir, 'zillow_housing','properties_2016.csv')
-        dataset = Zillow_Dataset(data_path, args.scale)
-        dataset_train, dataset_val = random_split(dataset, [0.5, 0.5], generator=generator)
-        num_classes = dataset_train.dataset.num_classes
-    elif args.task_name == 'zillow-2017':
-        data_path = os.path.join(args.eval_dir, 'zillow_housing','properties_2017.csv')
-        dataset = Zillow_Dataset(data_path, args.scale)
-        dataset_train, dataset_val = random_split(dataset, [0.5, 0.5], generator=generator)
-        num_classes = dataset_train.dataset.num_classes
+    
+
     else:
         raise ValueError('Task name not recognized')
 
@@ -407,9 +404,22 @@ class LocationEncoder(nn.Module):
                 self.args.k = 1
                 args.k = 1
                 self.location_feature_dim=1024+256
+            elif 'HAVER_softmax' in self.location_model_name:
+                temp = float(self.location_model_name.split('_')[-1])
+                self.args.geo_temp = temp
+                print(f'Using RANF_softmax with temperature {self.args.geo_temp}')
+            elif  'HILO_softmax' in self.location_model_name:    
+                temp = float(self.location_model_name.split('_')[-1])
+                self.args.temp = temp
+                print(f'Using RANF_softmax with temperature {self.args.temp}')
+            elif 'COMBINED_softmax' in self.location_model_name:
+                semantic_temp = float(self.location_model_name.split('_')[-2])
+                geo_temp = float(self.location_model_name.split('_')[-1])
+                self.args.geo_temp = geo_temp
+                self.args.temp = semantic_temp
+                print(f'Using RANF_COMBINED_softmax with temperatures {self.args.temp} and {self.args.geo_temp}')
             #ranf using geoclip
             
-        
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
         self.loc_model.eval()
@@ -456,14 +466,14 @@ class LocationEncoder(nn.Module):
                 # Get the corresponding highres_embeddings
                 high_res_embeddings = self.db_high_resolution_satclip_embeddings[top_indices]
                 high_res_embeddings = high_res_embeddings.mean(axis=1)
-            elif 'softmax' in self.location_model_name:
+            elif 'HILO_softmax' in self.location_model_name or 'COMBINED_softmax' in self.location_model_name:
                 high_res_similarity = torch.nn.functional.softmax(high_res_similarity * self.args.temp, dim=-1) #batch, num_db
                 high_res_embeddings = high_res_similarity @ self.db_high_resolution_satclip_embeddings.to(args.device) #batch, 1024
             #only send the rich image features
             if self.location_model_name=='RANF':
                 loc_embeddings = high_res_embeddings
             #concatenate rich image features with low res location features
-            elif self.location_model_name=='RANF_HILO' or self.location_model_name=='RANF_CLUSTER' or self.location_model_name=='RANF_HILO_softmax':
+            elif self.location_model_name=='RANF_HILO' or self.location_model_name=='RANF_CLUSTER' or 'RANF_HILO_softmax' in self.location_model_name:
                 loc_embeddings = np.concatenate((high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
             elif self.location_model_name=='RANF_HAVER' or self.location_model_name=='RANF_COMBINED':
                 #lon, lat
@@ -473,6 +483,7 @@ class LocationEncoder(nn.Module):
                 #convert to cartesian coordinates
                 query_locations_xyz = torch.tensor(rad_to_cart(query_locations))
                 angular_similarity = query_locations_xyz.float().to(args.device) @ self.db_locs_xyz.T
+                
                 # D_ang,I_ang = self.db_locs_index.search(query_locations_xyz, 1)
                 #get haversine distance
                 #get corresponding highres embeddings
@@ -485,9 +496,29 @@ class LocationEncoder(nn.Module):
                 if self.location_model_name=='RANF_HAVER':
                     loc_embeddings = np.concatenate((angular_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
                 elif self.location_model_name=='RANF_COMBINED':
-                    averaged_high_res_embeddings = (angular_high_res_embeddings + high_res_embeddings)/2
+                    averaged_high_res_embeddings = 0*angular_high_res_embeddings + 1.0*high_res_embeddings
                     loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
-            
+            elif 'RANF_HAVER_softmax' in self.location_model_name or 'RANF_COMBINED_softmax' in self.location_model_name:
+                query_locations_latlon = coords.cpu().numpy()
+                #convert to radians
+                query_locations = query_locations_latlon * math.pi/180
+                #convert to cartesian coordinates
+                query_locations_xyz = torch.tensor(rad_to_cart(query_locations))
+                #get the similarity between the query locations and the database locations
+                angular_similarity = query_locations_xyz.float().to(args.device) @ self.db_locs_xyz.T
+                #remove data that is further than certain point
+                #scale the similarity and convert to probablilities
+                angular_similarity = nn.functional.softmax(angular_similarity * self.args.geo_temp, dim=-1)
+                #get the scale averaged high res embeddings
+                angular_high_res_embeddings = angular_similarity @ self.db_high_resolution_satclip_embeddings.to(args.device)
+                if 'RANF_HAVER' in self.location_model_name:
+                    #concatenate this with the low res values
+                    loc_embeddings = np.concatenate((angular_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
+                elif 'RANF_COMBINED' in self.location_model_name:
+                    #compute the average between the two high res embeddings
+                    averaged_high_res_embeddings = 0.5*angular_high_res_embeddings + 0.5*high_res_embeddings
+                    #concatenate this with the low res values
+                    loc_embeddings = np.concatenate((averaged_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
             else:
                 raise ValueError('Unimplemented RANF')
 

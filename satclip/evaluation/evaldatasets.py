@@ -158,6 +158,31 @@ class Population_Dataset(Dataset):
 
     def __len__(self):
         return len(self.label)
+    
+#https://www.kaggle.com/datasets/goldenoakresearch/us-household-income-stats-geo-locations
+class MedianIncome_Dataset(Dataset):
+    def __init__(self, data_path, scale=0):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
+        self.data_path = data_path
+        self.df = pd.read_csv(data_path, encoding='latin1')
+        self.df.dropna(subset=['Median', 'Lat', 'Lon'],inplace=True)
+        self.df.reset_index(drop=True, inplace=True)
+
+        self.loc = self.df[['Lon', 'Lat']].values
+        self.label = self.df['Median']
+        self.num_classes = 0
+
+
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        label = torch.tensor(self.label[index]).double()
+        return loc,self.curr_scale, np.log(1+label)   
+    
+    def __len__(self):
+        return len(self.label)
+
 
 class NaBird_Dataset(Dataset):
     def __init__(self, data_path,scale=0,type='val'):

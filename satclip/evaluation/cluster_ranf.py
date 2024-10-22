@@ -17,6 +17,9 @@ def get_args():
     args.add_argument('--cluster_type', choices=['kmeans', 'hierarchical', 'dbscan'])
     return args.parse_args()
 
+
+
+
 if __name__ == '__main__':
     args = get_args()
     data = np.load(args.data_path)
