@@ -17,7 +17,7 @@ import json
 # import models
 import argparse
 #local import 
-from .eval import LocationEncoder
+from .range import LocationEncoder
 
 def coord_grid(grid_size, split_ids=None, split_of_interest=None):
     # generate a grid of locations spaced evenly in coordinate space

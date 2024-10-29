@@ -64,6 +64,28 @@ class Eco_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+class Country_Dataset(Dataset):
+    def __init__(self, data_path, scale=0):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
+        self.data_path = data_path
+        self.df = pd.read_csv(data_path)
+        self.df.dropna(subset=['country', 'lat','lon'],inplace=True)
+        self.df.reset_index(drop=True, inplace=True)
+
+        self.loc = self.df[['lon', 'lat']].values
+        self.label = self.df['country']
+        self.num_classes = self.df['country'].nunique()
+    
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        label = self.label[index]
+        return loc,self.curr_scale,label
+
+    def __len__(self):
+        return len(self.label)
+
 
 class Temp_Dataset(Dataset):
     def __init__(self, data_path, scale=0):
