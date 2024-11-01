@@ -6,6 +6,6 @@ random/
 satclip/precompute_satclip.py
 run_eval.py
 run_job.sh
-satclip/location_models/
 *.h5
 *.pth.tar
+*.zip
