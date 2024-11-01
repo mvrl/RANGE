@@ -86,6 +86,41 @@ class Country_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+class LandcoverNPZDataset(Dataset):
+    def __init__(self, data_path, scale=0):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
+        self.data_path = data_path
+        data = np.load(data_path)
+        self.loc = data['lonlats']
+        self.label = np.argmax(data['landcover_probs'], axis=-1)
+        self.indices = data['index']
+        self.num_classes = len(np.unique(self.label))
+        
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        label = self.label[index]
+        return loc, self.curr_scale, label
+
+    def __len__(self):
+        return len(self.indices)
+    
+class LandcoverNPZDataset_RANGE(Dataset):
+    def __init__(self, npz_path, scale=0):
+        self.npz_path = npz_path
+        data = np.load(npz_path)
+        self.lonlats = data['lonlats']
+        self.label = np.argmax(data['landcover_probs'], axis=-1)
+        self.indices = data['index']
+        self.num_classes = len(np.unique(self.label))
+        
+    def __getitem__(self, idx):
+        return self.lonlats[idx], self.indices[idx],  self.label[idx]
+
+    def __len__(self):
+        return len(self.indices)
+
 
 class Temp_Dataset(Dataset):
     def __init__(self, data_path, scale=0):
@@ -312,6 +347,7 @@ if __name__ == '__main__':
     # import code; code.interact(local=dict(globals(), **locals()))
     # inat_mini_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat_mini'
     # inat_mini_dataset = INatMini(inat_mini_path, scale=0,type='train')
+    import code; code.interact(local=dict(globals(), **locals()))
     nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
     nabird_dataset = NaBird_Dataset(nabird_data_path, scale=0)
     import code; code.interact(local=dict(globals(), **locals()))

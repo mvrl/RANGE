@@ -25,7 +25,7 @@ import sys
 import faiss
 #local import 
 from ..utils.load_model import load_checkpoint
-from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, NaBird_Dataset, INatMini_Dataset, MedianIncome_Dataset, Country_Dataset
+from .evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, NaBird_Dataset, INatMini_Dataset, MedianIncome_Dataset, Country_Dataset, LandcoverNPZDataset, LandcoverNPZDataset_RANGE 
 #loading different location models
 
 from ..load import get_satclip
@@ -52,7 +52,7 @@ def get_args():
     parser.add_argument('--k', type=int, default=1, help='Number of nearest neighbors to consider for RANF')
     #dataset arguments
     parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
-                        choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds', 'inat-mini', 'income', 'country'])
+                        choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds', 'inat-mini', 'income', 'country', 'landcover', 'landcover_range'])
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
     parser.add_argument('--scale', type=int, help='Scale for the location', choices=[0,1,3,5], default=0)
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
@@ -154,7 +154,7 @@ def evaluate_npz(args):
     val_embeddings = val_data['embeddings']
     val_labels = val_data['y']
     #decide the model
-    if args.task_name == 'ecoregion' or args.task_name == 'biome' or args.task_name == 'country':
+    if args.task_name == 'ecoregion' or args.task_name == 'biome' or args.task_name == 'country' or args.task_name=='landcover':
         print('Classification Model')
         clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
     elif args.task_name == 'nabirds':
@@ -198,6 +198,16 @@ def get_dataset(args):
     elif args.task_name == 'country':
         data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/country.csv'
         dataset = Country_Dataset(data_path, args.scale)
+        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
+        num_classes = dataset_train.dataset.num_classes
+    elif args.task_name == 'landcover':
+        data_path = '/projects/bdec/adhakal2/hyper_satclip/data/landcover_data/images_corrected/land_cover.npz'
+        dataset = LandcoverNPZDataset(data_path, args.scale)
+        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
+        num_classes = dataset_train.dataset.num_classes
+    elif args.task_name == 'landcover_range':
+        data_path = '/projects/bdec/adhakal2/hyper_satclip/data/landcover_data/images_corrected/land_cover.npz'
+        dataset = LandcoverNPZDataset_RANGE(data_path, args.scale)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'temperature':
@@ -476,6 +486,7 @@ class LocationEncoder(nn.Module):
             #normalize the embeddings
             curr_loc_embeddings = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
             high_res_similarity = curr_loc_embeddings.float() @ self.db_satclip_embeddings.t()
+            # high_res_similarity[torch.arange(high_res_similarity.shape[0]), scale] = -1e10
             if 'softmax' not in self.location_model_name:
                 top_values, top_indices = torch.topk(high_res_similarity, k=self.args.k, dim=1)
                 top_indices = top_indices.cpu() 
@@ -499,6 +510,7 @@ class LocationEncoder(nn.Module):
                 #convert to cartesian coordinates
                 query_locations_xyz = torch.tensor(rad_to_cart(query_locations))
                 angular_similarity = query_locations_xyz.float().to(args.device) @ self.db_locs_xyz.T
+                # angular_similarity[torch.arange(angular_similarity.shape[0]), scale] = -1e10
                 
                 # D_ang,I_ang = self.db_locs_index.search(query_locations_xyz, 1)
                 #get haversine distance

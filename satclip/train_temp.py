@@ -13,10 +13,10 @@ import glob
 from huggingface_hub import hf_hub_download
 from PIL import Image
 from tqdm import tqdm
+import argparse
 #local import
 from .load import get_satclip
 from .utils.make_lc import LCProb
-
 
 class DbDataset(Dataset):
     def __init__(self, db_path):
@@ -101,12 +101,13 @@ def normalize(x):
     return x / x.norm(p=2, dim=-1, keepdim=True)
 
 class TempModel(L.LightningModule):
-    def __init__(self,*args,  **kwargs):
+    def __init__(self,args,  **kwargs):
         super().__init__()
         #get batch_size
-        self.temp_init = kwargs.get('temp_init', 100)
-        self.lr = kwargs.get('lr', 1e-03)
-        self.num_classes = 12
+        self.temp_init = args.temp_init
+        self.lr = args.lr
+        self.wt_decay = args.wt_decay
+        self.num_classes = args.num_classes
         #get satcilp location encoder
         self.loc_model = get_satclip(
                     hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
@@ -114,7 +115,7 @@ class TempModel(L.LightningModule):
         for param in self.loc_model.parameters():
             param.requires_grad = False
         #grab the ranf_db
-        self.db_path = kwargs.get('db_path')
+        self.db_path = args.db_path
         ranf_db = np.load(self.db_path, allow_pickle=True)
         self.db_locs_latlon = torch.tensor(ranf_db['locs'].astype(np.float64))
         self.db_satclip_embeddings = torch.tensor(ranf_db['satclip_embeddings'].astype(np.float64))
@@ -173,9 +174,21 @@ class TempModel(L.LightningModule):
 
     def configure_optimizers(self):
         self.params = list(filter(lambda p: p.requires_grad, self.parameters()))
-        self.optimizer = torch.optim.Adam(self.params, lr=self.lr, weight_decay=1e-4)
+        self.optimizer = torch.optim.Adam(self.params, lr=self.lr, weight_decay=self.wt_decay)
         return self.optimizer
     
+def get_args():
+    parser = argparse.ArgumentParser(description='Train the temperature model')
+    parser.add_argument('--run_type', type=str, help='train or dev', default='train')
+    parser.add_argument('--landcover_npz_path', type=str, help='path to the landcover npz file', default='/projects/bdec/adhakal2/hyper_satclip/data/landcover_data/images_corrected/land_cover.npz')
+    parser.add_argument('--temp_init', type=int, help='initial temperature', default=20)
+    parser.add_argument('--lr', type=float, help='learning rate', default=1e-04)
+    parser.add_argument('--max_epochs', type=int, help='maximum number of epochs', default=1000)
+    parser.add_argument('--db_path', type=str, help='path to the ranf db', default='/projects/bdec/adhakal2/hyper_satclip/data/models/ranf/ranf_satmae_db.npz')
+    parser.add_argument('--wt_decay', type=float, help='weight decay', default=1e-4)
+    parser.add_argument('--num_classes', type=int, help='number of classes', default=12)
+    return parser.parse_args()
+
 if __name__ == '__main__':
     #create model
     create_prob = False
@@ -200,31 +213,26 @@ if __name__ == '__main__':
         print('Saved')
             
     else:
-        run_type = 'train'
-        landcover_npz_path = '/projects/bdec/adhakal2/hyper_satclip/data/landcover_data/images_corrected/land_cover.npz'
-        temp_init = 20
-        lr = 1e-04
-        max_epochs = 100
-        db_path = '/projects/bdec/adhakal2/hyper_satclip/data/models/ranf/ranf_satmae_db.npz'
+        args = get_args()
         #create dataset and dataloader
-        dataset = LandcoverNPZDataset(landcover_npz_path)
+        dataset = LandcoverNPZDataset(args.landcover_npz_path)
         train_dataset, val_dataset = torch.utils.data.random_split(dataset, [int(0.8*len(dataset)), len(dataset)-int(0.8*len(dataset))])
-        train_dataloader = DataLoader(train_dataset, batch_size=10000, num_workers=8, shuffle=True, drop_last=False)
-        val_dataloader = DataLoader(val_dataset, batch_size=10000, num_workers=8, shuffle=False, drop_last=False)
+        train_dataloader = DataLoader(train_dataset, batch_size=10000, num_workers=4, shuffle=True, drop_last=False)
+        val_dataloader = DataLoader(val_dataset, batch_size=10000, num_workers=4, shuffle=False, drop_last=False)
 
         #create the logger
-        run_name = f'temp_{temp_init}_Adam_{lr}_wtdecay_1e-4'
+        run_name = f'temp_{args.temp_init}_Adam_{args.lr}_wtdecay_{args.wt_decay}'
         wb_logger = WandbLogger(save_dir='/projects/bdec/adhakal2/hyper_satclip/logs', project='RAN-GE', name=run_name, mode='online')
  
         #initialize the model
-        model = TempModel(temp_init=temp_init, lr=lr, db_path=db_path)
+        model = TempModel(args)
         
         #create trainer
-        if run_type == 'train':
-            trainer = L.Trainer(precision='32', max_epochs=max_epochs, logger=wb_logger, strategy='ddp_find_unused_parameters_false', num_sanity_val_steps=1,
+        if args.run_type == 'train':
+            trainer = L.Trainer(precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy='ddp_find_unused_parameters_false', num_sanity_val_steps=1,
                         accelerator='gpu', devices=1, check_val_every_n_epoch=1, log_every_n_steps=5)
-        elif run_type == 'dev':
-            trainer = L.Trainer(fast_dev_run=10, precision='32', max_epochs=1, logger=wb_logger, strategy='ddp_find_unused_parameters_false', num_sanity_val_steps=1,
+        elif args.run_type == 'dev':
+            trainer = L.Trainer(fast_dev_run=10, precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy='ddp_find_unused_parameters_false', num_sanity_val_steps=1,
                         accelerator='gpu', devices=1, check_val_every_n_epoch=1, log_every_n_steps=5)
 
         #train the model
