@@ -34,6 +34,7 @@ from rshf.sinr import SINR
 from rshf.sinr import preprocess_locs as preprocess_sinr
 from ..location_models.csp.load_csp import get_csp
 from ..location_models.GPS2Vec.get_gps2vec import get_gps2vec
+from ..location_models.sphere2vec.sphere2vec import get_sphere2vec
 from ..positional_encoding.theory import Theory
 from ..positional_encoding.wrap import Wrap
 
@@ -367,6 +368,19 @@ class LocationEncoder(nn.Module):
             print('Using Wrap')
             self.loc_model = Wrap()
             self.location_feature_dim = 4
+        #sphere2vec
+        elif 's2vec' in self.location_model_name:
+            print('Using sphere2vec')
+            self.s2vec_type = self.location_model_name.split('_')[-1]
+            self.loc_model = get_sphere2vec(name=self.s2vec_type)
+            if self.s2vec_type == 'spherem':
+                self.location_feature_dim = 256
+            elif self.s2vec_type == 'spherec':
+                self.location_feature_dim = 288
+            elif self.s2vec_type == 'spheremplus':
+                self.location_feature_dim = 512
+            elif self.s2vec_type == 'spherecplus':
+                self.location_feature = 192
         #SINR
         elif self.location_model_name == 'SINR':
             print('Using SINR')
@@ -479,6 +493,8 @@ class LocationEncoder(nn.Module):
             loc_embeddings = self.loc_model(coords)
         elif self.location_model_name == 'SINR':
             coords = preprocess_sinr(coords)
+            loc_embeddings = self.loc_model(coords)
+        elif 's2vec' in self.location_model_name:
             loc_embeddings = self.loc_model(coords)
         elif 'RANF' in self.location_model_name:
             #get the satclip embeddings for the given location

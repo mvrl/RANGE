@@ -252,25 +252,30 @@ def get_sphere2vec(coord_dim=2, frequency_num=16,
                  freq_init="geometric", name="grid"):
     
     # Load yaml file
-    hparams = yaml.load(open("./satclip/location_models/sphere2vec/hparams.yaml"), Loader=yaml.FullLoader)
 
+    hparams = yaml.load(open("./satclip/location_models/sphere2vec/hparams.yaml"), Loader=yaml.FullLoader)
+    params_from = 'checkerboard'
     if name == "grid":
-        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams["inat2018"]["grid-linear"]["frequency_num"],
-                         max_radius=hparams["inat2018"]["grid-linear"]["max_radius"], min_radius=hparams["inat2018"]["grid-linear"]["min_radius"],
+        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams[params_from]["grid-linear"]["frequency_num"],
+                         max_radius=hparams[params_from]["grid-linear"]["max_radius"], min_radius=hparams[params_from]["grid-linear"]["min_radius"],
                          freq_init=freq_init, name=name)
     elif name == "spherec":
-        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams["inat2018"]["spherec-linear"]["frequency_num"],
-                         max_radius=max_radius, min_radius=hparams["inat2018"]["spherec-linear"]["min_radius"],
+        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams[params_from]["spherec-linear"]["frequency_num"],
+                         max_radius=max_radius, min_radius=hparams[params_from]["spherec-linear"]["min_radius"],
                          freq_init=freq_init, name=name)
     elif name == "spherecplus":
-        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams["inat2018"]["spherecplus-linear"]["frequency_num"],
-                         max_radius=max_radius, min_radius=hparams["inat2018"]["spherecplus-linear"]["min_radius"],
+        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams[params_from]["spherecplus-linear"]["frequency_num"],
+                         max_radius=max_radius, min_radius=hparams[params_from]["spherecplus-linear"]["min_radius"],
                          freq_init=freq_init, name=name)
     elif name == "spherem":
-        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams["inat2018"]["spherem-linear"]["frequency_num"],
-                         max_radius=max_radius, min_radius=hparams["inat2018"]["spherem-linear"]["min_radius"],
+        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams[params_from]["spherem-linear"]["frequency_num"],
+                         max_radius=max_radius, min_radius=hparams[params_from]["spherem-linear"]["min_radius"],
                          freq_init=freq_init, name=name)
     elif name == "spheremplus":
-        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams["inat2018"]["spheremplus-linear"]["frequency_num"],
-                         max_radius=max_radius, min_radius=hparams["inat2018"]["spheremplus-linear"]["min_radius"],
+        return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams[params_from]["spheremplus-linear"]["frequency_num"],
+                         max_radius=max_radius, min_radius=hparams[params_from]["spheremplus-linear"]["min_radius"],
                          freq_init=freq_init, name=name)
+
+if __name__ == '__main__':
+    model = get_sphere2vec(name="spherec")
+    import code; code.interact(local=dict(globals(), **locals()))
