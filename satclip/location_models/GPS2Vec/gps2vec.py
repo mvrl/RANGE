@@ -2,10 +2,8 @@ import numpy as np
 import math
 import sys
 import utm
-import os
+
 from keras.models import model_from_json
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Flatten, Dense
 
 
 def utm_zone_ranges():
@@ -28,7 +26,8 @@ def utm_zone_ranges():
             if j==19:
                 lat_max=lat_max+4
 
-            if utmzone=="31 V" or utmzone=="32 X" or utmzone=="34 X" or utmzone=="36 X":
+            if utmzone=="31 V" or utmzone=="32 X" or utmzone=="34 X" or utmzone=="36 X" or \
+            utmzone=="":
                 continue
             #deal with exceptions: 32V, 31X, 33X, 35X, 37X
             if utmzone=="32 V":
@@ -128,7 +127,33 @@ def loc2mat(location,nrows=20,ncols=20,sigma=20000):
 
     return mat
 
+def find_closest_utm_zone(utm_zones, query_zone):
+    """
+    Find the closest UTM zone to the query zone, considering both the zone number and letter.
 
+    Parameters:
+        utm_zones (list of tuples): List of UTM zones, each as (number, letter), e.g., (33, 'T').
+        query_zone (tuple): The UTM zone to compare against, as (number, letter).
+    
+    Returns:
+        tuple: The closest UTM zone as (number, letter).
+    """
+    query_number, query_letter = query_zone
+    query_letter_value = ord(query_letter)  # Convert letter to ASCII value
+
+    def zone_distance(zone):
+        number, letter = zone
+        letter_value = ord(letter)
+        number_diff = abs(number - query_number)
+        letter_diff = abs(letter_value - query_letter_value)
+        
+        # Return a combined distance metric
+        return number_diff + letter_diff
+
+    # Find the closest zone using the custom distance function
+    closest_zone = min(utm_zones, key=zone_distance)
+    return closest_zone
+  
 def georep(location,basedir,nrows,ncols,sigma,flag):
     if flag==0:
         dim = 1000 + 365
@@ -137,18 +162,28 @@ def georep(location,basedir,nrows,ncols,sigma,flag):
 
     latitude = location[0]
     longitude = location[1]
-    utmloc=utm.from_latlon(latitude,longitude)
+    try:
+        utmloc=utm.from_latlon(latitude,longitude)
+    except:
+        import code; code.interact(local=dict(globals(), **locals()))
     utmzone = str(utmloc[2])+" "+utmloc[3]
+
     if flag==0:
-        model_json_file=os.path.dirname(basedir)+'/model_visual.json'
+        model_json_file = os.path.dirname(basedir)+'/model_visual.json'
+        utm_zones = get_utm_zones_from_directory(basedir)
+        utm_closest = find_closest_utm_zone(utm_zones, (utmloc[2], utmloc[3]))
     else:
         model_json_file=os.path.dirname(basedir)+'/model_tag.json'
+        utm_zones = get_utm_zones_from_directory(basedir)
+        utm_closest = find_closest_utm_zone(utm_zones, (utmloc[2], utmloc[3]))
+    
+    utmzone = str(utm_closest[0])+" "+str(utm_closest[1])
 
     model_weights_file=basedir+"/model_"+utmzone+".h5"
 
     import h5py
     f = h5py.File(model_weights_file, 'r')
-    print(f.attrs.get('keras_version'))
+    #print(f.attrs.get('keras_version'))
     #sys.exit(-1)
     model = load_model(model_json_file,model_weights_file)
     input = loc2mat(location,nrows,ncols,sigma)
@@ -162,8 +197,6 @@ def georep(location,basedir,nrows,ncols,sigma,flag):
 
     return geofeas
 
-
-
 def load_model(json_file_path,model_weights_path):
     json_file = open(json_file_path, 'r')
     loaded_model_json = json_file.read()
@@ -176,17 +209,45 @@ def load_model(json_file_path,model_weights_path):
 
     return loaded_model
 
+import os
+import re
+
+def get_utm_zones_from_directory(directory_path):
+    """
+    Extract UTM zones and letters from filenames in a specified directory.
+    
+    Parameters:
+        directory_path (str): Path to the directory containing the files.
+        
+    Returns:
+        list of tuples: Each tuple contains a UTM zone number and letter, e.g., (33, 'T').
+    """
+    utm_zones = []
+    # Regular expression to match 'model_<zone><letter>.h5'
+    pattern = re.compile(r"model_(\d+) ([A-Z])\.h5")
+    
+    # Iterate over each file in the directory
+    for filename in os.listdir(directory_path):
+        match = pattern.match(filename)
+        if match:
+            # Extract the zone number and letter
+            zone_number = int(match.group(1))
+            zone_letter = match.group(2)
+            # Append as a tuple to the list
+            utm_zones.append((zone_number, zone_letter))
+    
+    return utm_zones
+
 def main():
     nrows = 20
     ncols = 20
     sigma = 20000
-    flag=0
+    flag=1
     if flag==0:
         basedir="./models_visual/"
     elif flag==1:
         basedir="./models_tag/"
 
-    import code; code.interact(local=dict(globals(), **locals()))
     location=[1.3199909039789364, 103.764553967551]
     geofea = georep(location,basedir,nrows,ncols,sigma,flag)
     print(geofea)

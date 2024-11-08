@@ -147,11 +147,11 @@ def evaluate_npz(args):
     assert os.path.exists(train_path), f'Train embeddings file does not exist: {train_path}'
     assert os.path.exists(val_path), f'Val embeddings file does not exist: {val_path}'
     #get training data
-    train_data = np.load(train_path)
+    train_data = np.load(train_path, allow_pickle=True)
     train_embeddings = train_data['embeddings']
     train_labels = train_data['y']
     #get validation data
-    val_data = np.load(val_path)
+    val_data = np.load(val_path, allow_pickle=True)
     val_embeddings = val_data['embeddings']
     val_labels = val_data['y']
     #decide the model
@@ -380,7 +380,7 @@ class LocationEncoder(nn.Module):
             elif self.s2vec_type == 'spheremplus':
                 self.location_feature_dim = 512
             elif self.s2vec_type == 'spherecplus':
-                self.location_feature = 192
+                self.location_feature_dim = 192
         #SINR
         elif self.location_model_name == 'SINR':
             print('Using SINR')

@@ -16,6 +16,8 @@ def get_gps2vec(locations,basedir,model='visual'):
       raise ValueError('Invalid model')
     out = []
     for location in locations:
+      if location[0] <= -80 or location[0] >= 84:
+         continue
       geofea = georep(location,modeldir,nrows,ncols,sigma,flag)
       out.append(np.asarray(geofea))
     return np.asarray(out, dtype=object)
@@ -26,6 +28,4 @@ if __name__ == '__main__':
     basedir = '/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/GPS2Vec'
     model = 'visual'
     emb = get_gps2vec(np.flip(c.numpy(),1),basedir,model=model)
-    
-
-    print(out)
+    print(emb)
