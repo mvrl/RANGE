@@ -254,7 +254,7 @@ def get_sphere2vec(coord_dim=2, frequency_num=16,
     # Load yaml file
 
     hparams = yaml.load(open("./satclip/location_models/sphere2vec/hparams.yaml"), Loader=yaml.FullLoader)
-    params_from = 'checkerboard'
+    params_from = 'inat2018'
     if name == "grid":
         return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams[params_from]["grid-linear"]["frequency_num"],
                          max_radius=hparams[params_from]["grid-linear"]["max_radius"], min_radius=hparams[params_from]["grid-linear"]["min_radius"],
