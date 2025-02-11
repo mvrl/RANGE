@@ -8,6 +8,7 @@ import json
 
 ##local import
 from ..datamodules.s2geo_dataset import S2GeoDataModule 
+from .checkerboarddataset import CheckerDataset
 #srikumar
 class Biome_Dataset(Dataset):
     def __init__(self, data_path, scale=0):
@@ -64,6 +65,46 @@ class Eco_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+class Inat_Dataset(Dataset):
+    def __init__(self, data_path, scale=0, type='train'):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
+        self.data_path = data_path
+        self.train_data_path = os.path.join(data_path,'inat2018_train.csv')
+        
+        self.val_data_path = os.path.join(data_path,'inat2018_val.csv')
+        self.train_df = pd.read_csv(self.train_data_path)
+        self.train_df.drop('Unnamed: 0', inplace=True, axis=1)
+        self.val_df = pd.read_csv(self.val_data_path) 
+        self.val_df = self.val_df[['lon', 'lat', 'class']]
+        train_len = len(self.train_df)
+        val_len = len(self.val_df)
+        #join the two dataframes
+        self.df = pd.concat([self.train_df,self.val_df], ignore_index=True)
+        # self.df.dropna(subset=['lon','lat', 'class'],inplace=True)
+        self.df.reset_index(drop=True, inplace=True)
+
+        # self.label, self.label_map = pd.factorize(self.df['class'])
+        self.label = self.df['class'].values
+        self.loc = self.df[['lon', 'lat']].values
+        if type=='train':
+            self.label = self.label[:train_len]
+            self.loc = self.loc[:train_len]
+        elif type == 'val':
+            self.label = self.label[train_len:]
+            self.loc = self.loc[train_len:]
+        
+        self.num_classes = self.df['class'].nunique() 
+
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        label = self.label[index]
+        return loc,self.curr_scale,label        
+
+    def __len__(self):
+        return len(self.label)
+
 class Country_Dataset(Dataset):
     def __init__(self, data_path, scale=0):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
@@ -85,6 +126,49 @@ class Country_Dataset(Dataset):
 
     def __len__(self):
         return len(self.label)
+
+class Ocean_Dataset(Dataset):
+    def __init__(self, data_path, scale=0):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
+        self.data_path = data_path
+        self.df = pd.read_csv(data_path)
+        self.df.dropna(subset=['land', 'lat','lon'],inplace=True)
+        self.df.reset_index(drop=True, inplace=True)
+
+        self.loc = self.df[['lon', 'lat']].values
+        self.label = self.df['land']
+        self.num_classes = self.df['land'].nunique()
+    
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        label = self.label[index]
+        return loc,self.curr_scale,label
+
+    def __len__(self):
+        return len(self.label)
+
+class CSVDataset(Dataset):
+    def __init__(self, data_path, scale=0):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        print(f'Using scale {scale} for Dataset')
+        self.data_path = data_path
+        self.df = pd.read_csv(data_path)
+        self.loc = self.df[['lon', 'lat']].values
+        self.label = self.df.index
+        self.num_classes = 0
+
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        label = self.label[index]
+        return loc,self.curr_scale,label
+    
+    def __len__(self):
+        return len(self.label)
+
+
 
 class LandcoverNPZDataset(Dataset):
     def __init__(self, data_path, scale=0):
@@ -190,6 +274,28 @@ class Elevation_Dataset(Dataset):
     def __len__(self):
         return len(self.label)
 
+#dataset for ERA5 data
+class ERA5_Dataset(Dataset):
+    def __init__(self, data_path, scale=0, group='air_temp_m'):
+        map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
+        self.curr_scale = map_scale[scale].double()
+        self.group=group
+        self.data_path = data_path
+        self.df = pd.read_csv(data_path)
+        self.df.dropna(subset=[group],inplace=True)
+        self.df.reset_index(drop=True, inplace=True)
+
+        self.loc = self.df[['Longitude', 'Latitude']].values
+        self.label = self.df[group]
+        self.num_classes = 0
+
+    def __getitem__(self, index):
+        loc =  torch.from_numpy(self.loc[index]).double()
+        label = torch.tensor(self.label[index]).double()
+        return loc,self.curr_scale,label
+    
+    def __len__(self):
+        return len(self.label)
 
 
 #https://codeocean.com/capsule/6456296/tree/v2
@@ -217,18 +323,19 @@ class Population_Dataset(Dataset):
         return len(self.label)
     
 #https://www.kaggle.com/datasets/goldenoakresearch/us-household-income-stats-geo-locations
-class MedianIncome_Dataset(Dataset):
+class Income_Dataset(Dataset):
     def __init__(self, data_path, scale=0):
         map_scale = {0:torch.tensor([]),1:torch.tensor([1,0,0]),3:torch.tensor([0,1,0]),5:torch.tensor([0,0,1])}
         self.curr_scale = map_scale[scale].double()
         print(f'Using scale {scale} for Dataset')
         self.data_path = data_path
-        self.df = pd.read_csv(data_path, encoding='latin1')
-        self.df.dropna(subset=['Median', 'Lat', 'Lon'],inplace=True)
+        self.df = pd.read_csv(data_path)
+        self.df.dropna(subset=['MedianIncome2018', 'lat', 'lon'],inplace=True)
         self.df.reset_index(drop=True, inplace=True)
 
-        self.loc = self.df[['Lon', 'Lat']].values
-        self.label = self.df['Median']
+        self.loc = self.df[['lon', 'lat']].values
+        self.label = self.df['MedianIncome2018']
+        self.label = self.label.apply(lambda x: int(x.replace(',','')))
         self.num_classes = 0
 
 
@@ -280,6 +387,7 @@ class NaBird_Dataset(Dataset):
 
     def __len__(self):
         return len(self.label)    
+    
 
 class INatMini_Dataset(Dataset):
     def __init__(self, data_path,scale=0,type='val'):
@@ -342,16 +450,25 @@ class Zillow_Dataset(Dataset):
 
 if __name__ == '__main__':
 
-    # data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/zillow_housing'
-    # zillow_dataset = ZillowDataset(data_path, scale=0, year=2016)
+    income_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/median_income.csv'
+    income_dataset = Income_Dataset(income_path, scale=0)
+    import code; code.interact(local=dict(globals(), **locals()))
+    # era_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/ERA5_Land_Clipped_2020.csv'
+    # era_dataset = ERA5_Dataset(era_path, scale=0, group='air_temp_m')
     # import code; code.interact(local=dict(globals(), **locals()))
-    # inat_mini_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat_mini'
-    # inat_mini_dataset = INatMini(inat_mini_path, scale=0,type='train')
-    import code; code.interact(local=dict(globals(), **locals()))
-    nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
-    nabird_dataset = NaBird_Dataset(nabird_data_path, scale=0)
-    import code; code.interact(local=dict(globals(), **locals()))
-    biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
+    # ocean_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/land_ocean_test.csv'
+    # ocean_dataset = Ocean_Dataset(ocean_data_path, scale=0)
+    # import code; code.interact(local=dict(globals(), **locals()))
+    # csv_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/cont_haver.csv'
+    # csv_dataset = CSVDataset(csv_data_path, scale=0)
+    # import code; code.interact(local=dict(globals(), **locals()))
+    # inat_data_path='/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
+    # inat_dataset = Inat_Dataset(inat_data_path, scale=0, type='val')
+    # import code; code.interact(local=dict(globals(), **locals()))
+    # nabird_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat/geo_prior_data/data/nabirds/nabirds_with_loc_2019.json'
+    # nabird_dataset = NaBird_Dataset(nabird_data_path, scale=0)
+    # import code; code.interact(local=dict(globals(), **locals()))
+    # biome_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data'
     # biome_dataset = Biome_Dataset(biome_data_path, scale=1)
     # temp_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/temp.csv'
     # temp_dataset = Temp_Dataset(temp_data_path,scale=3)

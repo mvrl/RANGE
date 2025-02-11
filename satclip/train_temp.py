@@ -15,8 +15,12 @@ from PIL import Image
 from tqdm import tqdm
 import argparse
 #local import
+from .evaluation.range import get_dataset
 from .load import get_satclip
 from .utils.make_lc import LCProb
+
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
 
 class DbDataset(Dataset):
     def __init__(self, db_path):
@@ -104,10 +108,11 @@ class TempModel(L.LightningModule):
     def __init__(self,args,  **kwargs):
         super().__init__()
         #get batch_size
+        self.args = args
         self.temp_init = args.temp_init
         self.lr = args.lr
-        self.wt_decay = args.wt_decay
-        self.num_classes = args.num_classes
+        self.alpha = args.alpha
+        self.num_classes = args.output_size
         #get satcilp location encoder
         self.loc_model = get_satclip(
                     hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
@@ -128,17 +133,27 @@ class TempModel(L.LightningModule):
         self.linear = nn.Linear(self.inp_size, self.num_classes).double()
 
         #initialize the loss
-        self.loss = nn.CrossEntropyLoss()
-        #initialize the accuracy
-        self.accuracy = Accuracy(task='multiclass', num_classes=self.num_classes)
+        if args.task_type=='classification':
+            self.criterion = nn.CrossEntropyLoss()
+            #initialize the accuracy
+            self.accuracy = Accuracy(task='multiclass', num_classes=self.num_classes)
+        elif args.task_type=='regression':
+            self.criterion = nn.MSELoss()
+            self.accuracy = nn.MSELoss()
 
     def forward(self, batch):
-        idx, loc, prob = batch
+        # if (self.global_step // self.args.update_iter) % 2 == 0:
+        #     self.linear.requires_grad_(True)
+        #     self.temp_layer.requires_grad_(False)
+        # else:
+        #     self.linear.requires_grad_(False)
+        #     self.temp_layer.requires_grad_(True)    
+    
+        loc,_, y = batch
         #get the satclip embeddings for the locations
         loc_embeddings = self.loc_model(loc)
         #compute similarity with db images
         similarity = normalize(loc_embeddings) @ normalize(self.db_satclip_embeddings.T).to(self.device)   
-        similarity[torch.arange(similarity.shape[0]), idx] = -1e10
         #scale the similarities
         logit_scale = self.temp_layer.logit_scale.exp()
         similarity = similarity * logit_scale
@@ -150,14 +165,18 @@ class TempModel(L.LightningModule):
         range_embeddings = torch.cat([loc_embeddings, averaged_high_res_embeddings], dim=-1)
         #forward through the linear layer
         logits = self.linear(range_embeddings)
-        #get the class with max probability
-        prob = torch.argmax(prob, dim=-1)
         #compute cross entropy loss
-        loss = self.loss(logits, prob)
-        #compute accuracy
-        acc = self.accuracy(logits, prob)
+        loss = self.criterion(logits, y)
 
+        # # L2 Regularization (Ridge penalty)
+        # l2_reg = 0
+        # for param in self.linear.parameters():
+        #     l2_reg += torch.sum(param ** 2)
+        # loss += self.alpha * l2_reg  # Add the L2 penalty to the loss
+        #compute accuracy
+        acc = self.accuracy(logits, y)
         return loss, acc
+    
 
     def training_step(self, batch, batch_idx):
         loss, acc = self.forward(batch)
@@ -174,19 +193,25 @@ class TempModel(L.LightningModule):
 
     def configure_optimizers(self):
         self.params = list(filter(lambda p: p.requires_grad, self.parameters()))
-        self.optimizer = torch.optim.Adam(self.params, lr=self.lr, weight_decay=self.wt_decay)
+        self.optimizer = torch.optim.Adam(self.params, lr=self.lr, weight_decay=args.wt_decay)
         return self.optimizer
     
 def get_args():
     parser = argparse.ArgumentParser(description='Train the temperature model')
     parser.add_argument('--run_type', type=str, help='train or dev', default='train')
     parser.add_argument('--landcover_npz_path', type=str, help='path to the landcover npz file', default='/projects/bdec/adhakal2/hyper_satclip/data/landcover_data/images_corrected/land_cover.npz')
-    parser.add_argument('--temp_init', type=int, help='initial temperature', default=20)
-    parser.add_argument('--lr', type=float, help='learning rate', default=1e-04)
-    parser.add_argument('--max_epochs', type=int, help='maximum number of epochs', default=1000)
+    parser.add_argument('--temp_init', type=int, help='initial temperature', default=15)
+    parser.add_argument('--lr', type=float, help='learning rate', default=0.01)
+    parser.add_argument('--max_epochs', type=int, help='maximum number of epochs', default=100)
+    parser.add_argument('--batch_size', type=int, help='batch size', default=10000)
     parser.add_argument('--db_path', type=str, help='path to the ranf db', default='/projects/bdec/adhakal2/hyper_satclip/data/models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--wt_decay', type=float, help='weight decay', default=1e-4)
     parser.add_argument('--num_classes', type=int, help='number of classes', default=12)
+    parser.add_argument('--num_workers', type=int, help='number of workers', default=4)
+    parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
+    parser.add_argument('--task_name', type=str , help='Task to evaluate')
+    parser.add_argument('--update_iter', type=int, help='update iteration', default=20)
+    parser.add_argument('--alpha', type=float, help='l2 regularization', default=1.0)
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -214,14 +239,26 @@ if __name__ == '__main__':
             
     else:
         args = get_args()
-        #create dataset and dataloader
-        dataset = LandcoverNPZDataset(args.landcover_npz_path)
-        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [int(0.8*len(dataset)), len(dataset)-int(0.8*len(dataset))])
-        train_dataloader = DataLoader(train_dataset, batch_size=10000, num_workers=4, shuffle=True, drop_last=False)
-        val_dataloader = DataLoader(val_dataset, batch_size=10000, num_workers=4, shuffle=False, drop_last=False)
+        args.scale = 0
+        train_dataloader ,val_dataloader, num_classes = get_dataset(args)
+        # train_dataset = train_loader.dataset
+        # val_dataset = val_loader.dataset
+        if num_classes==0:
+            args.task_type='regression'
+            args.output_size = 1
+        elif num_classes > 0:
+            args.task_type='classification'
+            args.output_size = num_classes
+        else:
+            raise ValueError('Invalid number of classes')
+        #get a few-shot batch
+        # fs_train_dataset, _ = torch.utils.data.random_split(train_dataset, (0.125, 0.875))
+        
+        # train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True, drop_last=False)
+        # val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, num_workers=4, shuffle=False, drop_last=False)
 
         #create the logger
-        run_name = f'temp_{args.temp_init}_Adam_{args.lr}_wtdecay_{args.wt_decay}'
+        run_name = f'fewshot_{args.task_name}_temp_{args.temp_init}'
         wb_logger = WandbLogger(save_dir='/projects/bdec/adhakal2/hyper_satclip/logs', project='RAN-GE', name=run_name, mode='online')
  
         #initialize the model
@@ -229,10 +266,10 @@ if __name__ == '__main__':
         
         #create trainer
         if args.run_type == 'train':
-            trainer = L.Trainer(precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy='ddp_find_unused_parameters_false', num_sanity_val_steps=1,
+            trainer = L.Trainer(precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy='ddp_find_unused_parameters_true', num_sanity_val_steps=1,
                         accelerator='gpu', devices=1, check_val_every_n_epoch=1, log_every_n_steps=5)
         elif args.run_type == 'dev':
-            trainer = L.Trainer(fast_dev_run=10, precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy='ddp_find_unused_parameters_false', num_sanity_val_steps=1,
+            trainer = L.Trainer(fast_dev_run=10, precision='32', max_epochs=args.max_epochs, logger=wb_logger, strategy='ddp_find_unused_parameters_true', num_sanity_val_steps=1,
                         accelerator='gpu', devices=1, check_val_every_n_epoch=1, log_every_n_steps=5)
 
         #train the model
