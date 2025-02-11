@@ -9,3 +9,5 @@ run_job.sh
 *.h5
 *.pth.tar
 *.zip
+run_ica.sh
+satclip/evaluation/inat/
