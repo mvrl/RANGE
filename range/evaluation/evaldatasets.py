@@ -1,10 +1,8 @@
 from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
 import torch
 import pandas as pd
 import os
 import numpy as np
-import json
 
 ##local import
 from .checkerboarddataset import CheckerDataset
@@ -233,7 +231,7 @@ class ERA5_Dataset(Dataset):
 
 #https://codeocean.com/capsule/6456296/tree/v2
 class Population_Dataset(Dataset):
-    def __init__(self, scale=0):
+    def __init__(self, data_path):
         self.data_path = data_path
         self.df = pd.read_csv(data_path)
         self.df.dropna(subset=['population'],inplace=True)

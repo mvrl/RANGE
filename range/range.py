@@ -1,30 +1,21 @@
 import lightning.pytorch as L
 import torch
-import pandas as pd
 import torch.nn as nn
-import torch.nn.functional as F
 from lightning.pytorch.loggers import WandbLogger 
 from lightning.pytorch.callbacks import ModelCheckpoint
-import torchmetrics
 from huggingface_hub import hf_hub_download
 from torch.utils.data import random_split, DataLoader
 
 from scipy.special import softmax
 import numpy as np
-from numpy import linalg as LA
-import sklearn
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.linear_model import RidgeClassifierCV, RidgeCV, RidgeClassifier
+from sklearn.linear_model import RidgeClassifierCV, RidgeCV
 from sklearn.metrics import top_k_accuracy_score, make_scorer
-from sklearn.metrics.pairwise import haversine_distances
 import math
 from tqdm import tqdm
 import argparse
-from einops import repeat
 import os
-from tqdm import tqdm 
 import sys
-import faiss
 
 #loading different location models
 
@@ -39,10 +30,7 @@ from .location_models.satclip.positional_encoding.theory import Theory
 from .location_models.satclip.positional_encoding.wrap import Wrap
 
 #local import of datasets
-from .evaluation.evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, NaBird_Dataset, INatMini_Dataset, Country_Dataset, LandcoverNPZDataset, LandcoverNPZDataset_RANGE, Inat_Dataset, CSVDataset, CheckerDataset, Ocean_Dataset, ERA5_Dataset, Income_Dataset 
-from .evaluation.inat.datasets import load_dataset
-
-import warnings
+from .evaluation.evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, Country_Dataset, Inat_Dataset, CSVDataset, CheckerDataset, Ocean_Dataset, ERA5_Dataset 
 
 # Custom scoring function: top-k accuracy
 def custom_top_k_accuracy(y_true, y_score, k=5, labels=None):
@@ -58,14 +46,12 @@ def get_args():
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SatCLIP')
     parser.add_argument('--ranf_db', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--ranf_model', type=str, default='', choices=['GeoCLIP', 'SatCLIP',''])
-    parser.add_argument('--k', type=int, default=1, help='Number of nearest neighbors to consider for RANF')
     parser.add_argument('--beta', type=float, default=0.5, help='Beta value for RANF_COMBINED')  
     #dataset arguments
     # parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
     #                     choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds', 'inat-mini', 'income', 'country', 'landcover', 'landcover_range', 'inat_1', 'inat_2', 'csv_data'])
     parser.add_argument('--task_name', type=str, help='Name of the task', default='biome')
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
-    parser.add_argument('--scale', type=int, help='Scale for the location', choices=[0,1,3,5], default=0)
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
     parser.add_argument('--num_workers', type=int, help='Number of workers', default=6)
 
@@ -97,63 +83,55 @@ def save_embeddings(args, train_loader, val_loader, location_model):
         print(f'Creating new directory {embeddings_dir}')
         os.makedirs(embeddings_dir)
     #create train and val path
-    train_path = os.path.join(embeddings_dir, f'{args.task_name}_k-{args.k}_scale-{args.scale}_train.npz')
-    val_path = os.path.join(embeddings_dir, f'{args.task_name}_k-{args.k}_scale-{args.scale}_val.npz')
+    train_path = os.path.join(embeddings_dir, f'{args.task_name}_train.npz')
+    val_path = os.path.join(embeddings_dir, f'{args.task_name}_val.npz')
     #freeze the model
     location_model.eval()
     location_model = location_model.to(args.device)
     with torch.no_grad():
         #first get the embeddings for the train data
         coords_list = []
-        scale_list = []
         embeddings_list = []
         y_list = []
         for i, data in tqdm(enumerate(train_loader)):
-            coords, scale, y = data
+            coords, y = data
             coords = coords.to(args.device)
-            scale = scale.to(args.device)
             try:
-                location_embeddings = location_model(coords, scale).cpu().numpy()
+                location_embeddings = location_model(coords).cpu().numpy()
             except AttributeError:
-                location_embeddings = location_model(coords, scale)
-            scale = scale.cpu().numpy()
+                location_embeddings = location_model(coords)
             coords = coords.cpu().numpy()
             y = y.cpu().numpy()
             coords_list.append(coords)
-            scale_list.append(scale)
             embeddings_list.append(location_embeddings)
             y_list.append(y)
         #save the embeddings
-        np.savez(train_path, coords=np.concatenate(coords_list, axis=0), scale=np.concatenate(scale_list, axis=0), embeddings=np.concatenate(embeddings_list, axis=0), y=np.concatenate(y_list, axis=0))
+        np.savez(train_path, coords=np.concatenate(coords_list, axis=0), embeddings=np.concatenate(embeddings_list, axis=0), y=np.concatenate(y_list, axis=0))
         print(f'File saved to {train_path}')
         #reset the lists
         coords_list = []
-        scale_list = []
         embeddings_list = []
         y_list = []
         #compute embeddings for validation data
         for i, data in tqdm(enumerate(val_loader)):
             coords, scale, y = data
             coords = coords.to(args.device)
-            scale = scale.to(args.device)
             try:
-                location_embeddings = location_model(coords, scale).cpu().numpy()
+                location_embeddings = location_model(coords).cpu().numpy()
             except AttributeError:
-                location_embeddings = location_model(coords, scale)
-            scale = scale.cpu().numpy()
+                location_embeddings = location_model(coords)
             coords = coords.cpu().numpy()
             y = y.cpu().numpy()
             coords_list.append(coords)
-            scale_list.append(scale)
             embeddings_list.append(location_embeddings)
             y_list.append(y)
         #save the embeddings
-        np.savez(val_path, coords=np.concatenate(coords_list, axis=0), scale=np.concatenate(scale_list, axis=0), embeddings=np.concatenate(embeddings_list, axis=0), y=np.concatenate(y_list, axis=0))
+        np.savez(val_path, coords=np.concatenate(coords_list, axis=0), embeddings=np.concatenate(embeddings_list, axis=0), y=np.concatenate(y_list, axis=0))
         print(f'File saved to {train_path} and {val_path}')
 
 def evaluate_npz(args):
-    train_path = os.path.join(args.embeddings_dir, args.location_model_name,str(args.k), args.task_name+'_k-'+str(args.k)+'_scale-'+str(args.scale)+'_train.npz')
-    val_path = os.path.join(args.embeddings_dir, args.location_model_name,str(args.k), args.task_name+'_k-'+str(args.k)+'_scale-'+str(args.scale)+'_val.npz')
+    train_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_train.npz')
+    val_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_val.npz')
     assert os.path.exists(train_path), f'Train embeddings file does not exist: {train_path}'
     assert os.path.exists(val_path), f'Val embeddings file does not exist: {val_path}'
     #get training data
@@ -164,10 +142,8 @@ def evaluate_npz(args):
     val_data = np.load(val_path, allow_pickle=True)
     val_embeddings = val_data['embeddings']
     val_labels = val_data['y']
-    # val_labels = np.append(val_labels, val_labels[101], axis=0)
-    # val_embeddings = np.append(val_embeddings, val_embeddings[101], axis=0)
-    #decide the model
-    # import code; code.interact(local=dict(globals(), **locals()))
+
+     #decide the model
     if args.task_name == 'ecoregion' or args.task_name == 'biome' or args.task_name == 'country' or args.task_name=='landcover' or 'checker' in args.task_name or args.task_name=='ocean':
         print('Classification Model')
         clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
@@ -205,14 +181,6 @@ def evaluate_npz(args):
         clf.fit(train_embeddings, train_labels)
         val_predictions = clf.decision_function(val_embeddings)
         final_prob = softmax(val_predictions, axis=1)
-        # inat_val_dataset = load_dataset(params, eval_type)
-        # image_prob = inat_val_dataset['val_preds']
-        #concatenate features
-        # val_predictions = clf.decision_function(val_embeddings)
-        # val_prob = softmax(val_predictions, axis=1)
-        # final_prob = val_prob * image_prob
-        # predictions = np.argmax(final_prob, axis=1) 
-        # num_labels = image_prob.shape[1]
         val_accuracy_1 = top_k_accuracy_score(val_labels, final_prob, k=1, labels=np.arange(8142))
         val_accuracy_3 = top_k_accuracy_score(val_labels, final_prob, k=3, labels=np.arange(8142))
         val_accuracy_5 = top_k_accuracy_score(val_labels, final_prob, k=5, labels=np.arange(8142))
@@ -233,63 +201,62 @@ def get_dataset(args):
     generator = torch.Generator().manual_seed(42)
     if args.task_name == 'biome':
         data_path = args.eval_dir
-        dataset = Biome_Dataset(data_path, args.scale)
+        dataset = Biome_Dataset(data_path)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'ecoregion':
         data_path = args.eval_dir
-        dataset = Eco_Dataset(data_path, args.scale)
+        dataset = Eco_Dataset(data_path)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'country':
-        data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/country.csv'
-        dataset = Country_Dataset(data_path, args.scale)
+        data_path = os.path.join(args.eval_dir,'country.csv')
+        dataset = Country_Dataset(data_path)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name=='ocean':
-        train_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/land_ocean_train.csv'
-        test_data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/land_ocean_test.csv'
-        dataset_train = Ocean_Dataset(train_data_path, args.scale)
-        dataset_val = Ocean_Dataset(test_data_path, args.scale)
+        train_data_path = os.path.join(args.eval_dir,'land_ocean_train.csv')
+        test_data_path = os.path.join(args.eval_dir, 'land_ocean_test.csv')
+        dataset_train = Ocean_Dataset(train_data_path)
+        dataset_val = Ocean_Dataset(test_data_path)
         num_classes = dataset_train.num_classes
 
     elif args.task_name == 'temperature':
         data_path = os.path.join(args.eval_dir, 'temp.csv')
-        dataset = Temp_Dataset(data_path, args.scale)
+        dataset = Temp_Dataset(data_path)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'housing':
         data_path = os.path.join(args.eval_dir, 'housing.csv')
-        dataset = Housing_Dataset(data_path, args.scale)
+        dataset = Housing_Dataset(data_path)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'elevation':
         data_path = os.path.join(args.eval_dir, 'elevation.csv')
-        dataset = Elevation_Dataset(data_path, args.scale)
+        dataset = Elevation_Dataset(data_path)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
     elif args.task_name == 'population':
         data_path = os.path.join(args.eval_dir, 'population.csv')
-        dataset = Population_Dataset(data_path, args.scale)
+        dataset = Population_Dataset(data_path)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset_train.dataset.num_classes
 
     elif args.task_name == 'inat_1':
         data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/'
-        dataset_train = Inat_Dataset(data_path, args.scale, type='train')
-        dataset_val = Inat_Dataset(data_path, args.scale, type='val')
-        # dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
+        dataset_train = Inat_Dataset(data_path, type='train')
+        dataset_val = Inat_Dataset(data_path, type='val')
         num_classes = dataset_train.num_classes
 
     elif args.task_name == 'csv_data':
-        data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/cont_haver.csv'
-        dataset_train = CSVDataset(data_path, args.scale)
-        dataset_val  = CSVDataset(data_path, args.scale)
+        data_path = os.path.join(args.eval_dir,'/cont_haver.csv')
+        dataset_train = CSVDataset(data_path)
+        dataset_val  = CSVDataset(data_path)
         num_classes = dataset_train.num_classes
     elif 'era5' in args.task_name:
-        data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/ERA5_Land_Clipped_2020.csv'
+        data_path = os.path.join(args.eval_dir, 'ERA5_Land_Clipped_2020.csv')
         group = args.task_name.split('-')[-1]
-        dataset = ERA5_Dataset(data_path, args.scale, group)
+        dataset = ERA5_Dataset(data_path, group)
         dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
         num_classes = dataset.num_classes 
     elif 'checker' in args.task_name:
@@ -509,7 +476,7 @@ class LocationEncoder(nn.Module):
             params.requires_grad=False
 
     #return the location embeddings
-    def forward(self, coords, scale):
+    def forward(self, coords):
         if self.location_model_name == 'SatCLIP':
             loc_embeddings = self.loc_model(coords)
         elif self.location_model_name == 'GeoCLIP':
@@ -546,7 +513,6 @@ class LocationEncoder(nn.Module):
             #normalize the embeddings
             curr_loc_embeddings = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
             high_res_similarity = curr_loc_embeddings.float() @ self.db_satclip_embeddings.t()
-            # high_res_similarity[torch.arange(high_res_similarity.shape[0]), scale] = -1e10
             if 'softmax' not in self.location_model_name:
                 top_values, top_indices = torch.topk(high_res_similarity, k=self.args.k, dim=1)
                 top_indices = top_indices.cpu() 
@@ -569,13 +535,7 @@ class LocationEncoder(nn.Module):
                 query_locations = query_locations_latlon * math.pi/180
                 #convert to cartesian coordinates
                 query_locations_xyz = torch.tensor(rad_to_cart(query_locations))
-                angular_similarity = query_locations_xyz.float().to(args.device) @ self.db_locs_xyz.T
-                # angular_similarity[torch.arange(angular_similarity.shape[0]), scale] = -1e10
-                
-                # D_ang,I_ang = self.db_locs_index.search(query_locations_xyz, 1)
-                #get haversine distance
-                #get corresponding highres embeddings
-                # angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[I_ang]
+                angular_similarity = query_locations_xyz.float().to(args.device) @ self.db_locs_xyz.T                
                 
                 ang_top_values, ang_top_indices = torch.topk(angular_similarity, k=self.args.k, dim=1)
                 ang_top_indices = ang_top_indices.cpu()
@@ -641,36 +601,3 @@ if __name__ == '__main__':
         acc = evaluate_npz(args)
         print(f'Accuracy: {acc}')
         sys.stderr.write(f'Accuracy: {acc}')
-
-    #run the model on raw data
-    elif args.eval_type == 'evaluate_raw':
-        print('Evaluating embeddings from raw data')
-        if num_classes == 0:
-            donwstream_task = 'regression'
-            model = RegressionNet(location_model, location_feature_dim)
-        
-            downstream_task = 'classification'
-            model = ClassificationNet(location_model, location_feature_dim, num_classes)
-        
-        #initialize the logger
-        wandb_logger = WandbLogger(save_dir=args.log_dir, project=args.project_name,
-        name=args.run_name, mode=args.wandb_mode)
-        #initialize the checkpoint callback
-        checkpoint_callback = ModelCheckpoint(monitor='val_acc', filename='{epoch}_{val_acc:.3f}', save_top_k=3, mode='max', save_last=True)
-        #initialize the trainer
-        if args.dev_run:
-            print('Running Dev Mode!')
-            trainer = L.Trainer(fast_dev_run=15, precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
-                num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1)
-        else:
-            print('Running Full Training!')
-            trainer = L.Trainer(precision='64', max_epochs=args.max_epochs, strategy='ddp_find_unused_parameters_false',
-                num_sanity_val_steps=1, accelerator=args.accelerator, check_val_every_n_epoch=1,
-                logger=wandb_logger, callbacks=[checkpoint_callback], log_every_n_steps=1)
-
-        trainer.fit(model, train_loader, val_loader)
-    
-
-    
-
-   
