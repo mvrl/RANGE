@@ -41,15 +41,10 @@ EARTH_RADIUS=6371
 def get_args():
     parser = argparse.ArgumentParser(description='code for evaluating the embeddings')
     #location model arguments
-    parser.add_argument('--ckpt_path', type=str, help='Path to the pretrained model',
-    default='/projects/bdec/adhakal2/hyper_satclip/logs/SAPCLIP/0tflzztx/checkpoints/epoch=162-acc_eco=0.000.ckpt')
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SatCLIP')
-    parser.add_argument('--ranf_db', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/models/ranf/ranf_satmae_db.npz')
+    parser.add_argument('--ranf_db', type=str, default='/projects/bdec/adhakal2/range/data/models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--ranf_model', type=str, default='', choices=['GeoCLIP', 'SatCLIP',''])
     parser.add_argument('--beta', type=float, default=0.5, help='Beta value for RANF_COMBINED')  
-    #dataset arguments
-    # parser.add_argument('--task_name', type=str, help='Name of the task', default='population',
-    #                     choices=['biome', 'ecoregion', 'temperature', 'housing', 'elevation', 'population', 'nabirds', 'inat-mini', 'income', 'country', 'landcover', 'landcover_range', 'inat_1', 'inat_2', 'csv_data'])
     parser.add_argument('--task_name', type=str, help='Name of the task', default='biome')
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
@@ -67,17 +62,16 @@ def get_args():
     parser.add_argument('--dev_run', action='store_true', help='Run the model in dev mode')
     parser.add_argument('--learning_rate', type=float, default=1e-03)
     #saving embeddings
-    parser.add_argument('--embeddings_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data/embeddings_norm')
+    parser.add_argument('--embeddings_dir', type=str, default='/projects/bdec/adhakal2/range/data/saved_embeddings')
     #eval type
-    parser.add_argument('--eval_type', type=str, default='evaluate_npz', choices=['save_embeddings', 'evaluate_raw', 'evaluate_npz'])
+    parser.add_argument('--eval_type', type=str, default='evaluate_npz', choices=['save_embeddings', 'evaluate_npz'])
     args = parser.parse_args()
 
     return args
 
 
 def save_embeddings(args, train_loader, val_loader, location_model):
-    feature_dim = location_model.location_feature_dim
-    embeddings_dir = os.path.join(args.embeddings_dir, args.location_model_name, str(args.k))
+    embeddings_dir = os.path.join(args.embeddings_dir, args.location_model_name)
     #check if directory already exist for this model
     if not os.path.exists(embeddings_dir):
         print(f'Creating new directory {embeddings_dir}')
@@ -164,10 +158,7 @@ def evaluate_npz(args):
     # import code; code.interact(local=dict(globals(), **locals()))
     scaler = MinMaxScaler()
 
-    if args.task_name == 'inat_1':
-        params = {'dataset':'inat_2018', 'load_img':False,
-            'cnn_pred_type':'full', 'inat2018_resolution':'pretrain', 'cnn_model':'inception_v3'}
-        eval_type='val'
+    if args.task_name == 'inat_1':  
         train_inat = np.load('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat2018_train_feats.npz')
         train_feats = train_inat['features']
         val_inat = np.load('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat2018_val_feats.npz')
