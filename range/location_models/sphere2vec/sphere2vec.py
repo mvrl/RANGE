@@ -252,8 +252,7 @@ def get_sphere2vec(coord_dim=2, frequency_num=16,
                  freq_init="geometric", name="grid"):
     
     # Load yaml file
-
-    hparams = yaml.load(open("./satclip/location_models/sphere2vec/hparams.yaml"), Loader=yaml.FullLoader)
+    hparams = yaml.load(open("./range/location_models/sphere2vec/hparams.yaml"), Loader=yaml.FullLoader)
     params_from = 'inat2018'
     if name == "grid":
         return GridAndSphere(coord_dim=coord_dim, frequency_num=hparams[params_from]["grid-linear"]["frequency_num"],
@@ -278,4 +277,3 @@ def get_sphere2vec(coord_dim=2, frequency_num=16,
 
 if __name__ == '__main__':
     model = get_sphere2vec(name="spherec")
-    import code; code.interact(local=dict(globals(), **locals()))

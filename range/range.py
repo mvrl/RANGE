@@ -1,21 +1,12 @@
-import lightning.pytorch as L
-import torch
-import torch.nn as nn
-from lightning.pytorch.loggers import WandbLogger 
-from lightning.pytorch.callbacks import ModelCheckpoint
-from huggingface_hub import hf_hub_download
-from torch.utils.data import random_split, DataLoader
-
-from scipy.special import softmax
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.linear_model import RidgeClassifierCV, RidgeCV
-from sklearn.metrics import top_k_accuracy_score, make_scorer
 import math
-from tqdm import tqdm
 import argparse
 import os
 import sys
+
+import torch
+import torch.nn as nn
+from huggingface_hub import hf_hub_download
 
 #loading different location models
 
@@ -29,12 +20,11 @@ from .location_models.sphere2vec.sphere2vec import get_sphere2vec
 from .location_models.satclip.positional_encoding.theory import Theory
 from .location_models.satclip.positional_encoding.wrap import Wrap
 
-#local import of datasets
-from .evaluation.evaldatasets import Biome_Dataset, Eco_Dataset, Temp_Dataset, Housing_Dataset, Elevation_Dataset, Population_Dataset, Country_Dataset, Inat_Dataset, CSVDataset, CheckerDataset, Ocean_Dataset, ERA5_Dataset 
 
-# Custom scoring function: top-k accuracy
-def custom_top_k_accuracy(y_true, y_score, k=5, labels=None):
-    return top_k_accuracy_score(y_true, y_score, k=k, labels=labels)
+#local import from utils 
+from .utils.save import save_embeddings
+from .utils.evaluate import evaluate_npz
+from .utils.load_dataset import get_dataset
 
 # Suppress all FutureWarnings
 EARTH_RADIUS=6371
@@ -44,6 +34,7 @@ def get_args():
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SatCLIP')
     parser.add_argument('--ranf_db', type=str, default='/projects/bdec/adhakal2/range/data/models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--ranf_model', type=str, default='', choices=['GeoCLIP', 'SatCLIP',''])
+    parser.add_argument('--pretrained_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/satclip/location_models')
     parser.add_argument('--beta', type=float, default=0.5, help='Beta value for RANF_COMBINED')  
     parser.add_argument('--task_name', type=str, help='Name of the task', default='biome')
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
@@ -55,214 +46,17 @@ def get_args():
     parser.add_argument('--run_name', type=str, help='Name of the run', default='downstream_eval')
     parser.add_argument('--project_name', type=str, help='Name of the project', default='Donwstream Evaluation')
     parser.add_argument('--wandb_mode', type=str, help='Mode of wandb', default='online')
-    
-    #downstream model argumetns
-    parser.add_argument('--max_epochs', type=int, default=200)
-    parser.add_argument('--accelerator', type=str, default='gpu')
-    parser.add_argument('--dev_run', action='store_true', help='Run the model in dev mode')
-    parser.add_argument('--learning_rate', type=float, default=1e-03)
+
     #saving embeddings
     parser.add_argument('--embeddings_dir', type=str, default='/projects/bdec/adhakal2/range/data/saved_embeddings')
     #eval type
     parser.add_argument('--eval_type', type=str, default='evaluate_npz', choices=['save_embeddings', 'evaluate_npz'])
+    #device arguments
+    parser.add_argument('--accelerator', type=str, default='gpu',choices=['gpu','cpu'], help='Accelerator to use')
     args = parser.parse_args()
 
     return args
 
-
-def save_embeddings(args, train_loader, val_loader, location_model):
-    embeddings_dir = os.path.join(args.embeddings_dir, args.location_model_name)
-    #check if directory already exist for this model
-    if not os.path.exists(embeddings_dir):
-        print(f'Creating new directory {embeddings_dir}')
-        os.makedirs(embeddings_dir)
-    #create train and val path
-    train_path = os.path.join(embeddings_dir, f'{args.task_name}_train.npz')
-    val_path = os.path.join(embeddings_dir, f'{args.task_name}_val.npz')
-    #freeze the model
-    location_model.eval()
-    location_model = location_model.to(args.device)
-    with torch.no_grad():
-        #first get the embeddings for the train data
-        coords_list = []
-        embeddings_list = []
-        y_list = []
-        for i, data in tqdm(enumerate(train_loader)):
-            coords, y = data
-            coords = coords.to(args.device)
-            try:
-                location_embeddings = location_model(coords).cpu().numpy()
-            except AttributeError:
-                location_embeddings = location_model(coords)
-            coords = coords.cpu().numpy()
-            y = y.cpu().numpy()
-            coords_list.append(coords)
-            embeddings_list.append(location_embeddings)
-            y_list.append(y)
-        #save the embeddings
-        np.savez(train_path, coords=np.concatenate(coords_list, axis=0), embeddings=np.concatenate(embeddings_list, axis=0), y=np.concatenate(y_list, axis=0))
-        print(f'File saved to {train_path}')
-        #reset the lists
-        coords_list = []
-        embeddings_list = []
-        y_list = []
-        #compute embeddings for validation data
-        for i, data in tqdm(enumerate(val_loader)):
-            coords, scale, y = data
-            coords = coords.to(args.device)
-            try:
-                location_embeddings = location_model(coords).cpu().numpy()
-            except AttributeError:
-                location_embeddings = location_model(coords)
-            coords = coords.cpu().numpy()
-            y = y.cpu().numpy()
-            coords_list.append(coords)
-            embeddings_list.append(location_embeddings)
-            y_list.append(y)
-        #save the embeddings
-        np.savez(val_path, coords=np.concatenate(coords_list, axis=0), embeddings=np.concatenate(embeddings_list, axis=0), y=np.concatenate(y_list, axis=0))
-        print(f'File saved to {train_path} and {val_path}')
-
-def evaluate_npz(args):
-    train_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_train.npz')
-    val_path = os.path.join(args.embeddings_dir, args.location_model_name, args.task_name+'_val.npz')
-    assert os.path.exists(train_path), f'Train embeddings file does not exist: {train_path}'
-    assert os.path.exists(val_path), f'Val embeddings file does not exist: {val_path}'
-    #get training data
-    train_data = np.load(train_path, allow_pickle=True)
-    train_embeddings = train_data['embeddings']
-    train_labels = train_data['y']
-    #get validation data
-    val_data = np.load(val_path, allow_pickle=True)
-    val_embeddings = val_data['embeddings']
-    val_labels = val_data['y']
-
-     #decide the model
-    if args.task_name == 'ecoregion' or args.task_name == 'biome' or args.task_name == 'country' or args.task_name=='landcover' or 'checker' in args.task_name or args.task_name=='ocean':
-        print('Classification Model')
-        clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=10)
-    elif 'inat' in args.task_name:
-        #create the scorer
-        print('Top-100 Classification Model')
-        top_k_scorer = make_scorer(custom_top_k_accuracy, k=1, labels=np.arange(8142))
-        clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=5)
-    elif args.task_name == 'nabirds':
-        #create the scorer
-        print('Top-k Classification Model')
-        clf = RidgeClassifierCV(alphas=(0.1, 1.0, 10.0), cv=9, 
-        scoring=top_k_scorer)
-    else:
-        print('Regression Model')
-        clf = RidgeCV(alphas=(0.1, 1.0, 10.0), cv=3)
-    #normalize the embeddings
-    # import code; code.interact(local=dict(globals(), **locals()))
-    scaler = MinMaxScaler()
-
-    if args.task_name == 'inat_1':  
-        train_inat = np.load('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat2018_train_feats.npz')
-        train_feats = train_inat['features']
-        val_inat = np.load('/projects/bdec/adhakal2/hyper_satclip/data/eval_data/inat2018_val_feats.npz')
-        val_feats = val_inat['features']
-        train_embeddings = np.concatenate([train_embeddings, train_feats], axis=1)
-        val_embeddings = np.concatenate([val_embeddings, val_feats], axis=1)
-        train_embeddings = scaler.fit_transform(train_embeddings)
-        val_embeddings = scaler.transform(val_embeddings)
-        # import code; code.interact(local=dict(globals(), **locals()))
-        #run the classifier
-        clf.fit(train_embeddings, train_labels)
-        val_predictions = clf.decision_function(val_embeddings)
-        final_prob = softmax(val_predictions, axis=1)
-        val_accuracy_1 = top_k_accuracy_score(val_labels, final_prob, k=1, labels=np.arange(8142))
-        val_accuracy_3 = top_k_accuracy_score(val_labels, final_prob, k=3, labels=np.arange(8142))
-        val_accuracy_5 = top_k_accuracy_score(val_labels, final_prob, k=5, labels=np.arange(8142))
-        print(f'Top-1 accuracy is {val_accuracy_1}')
-        print(f'Top-3 accuracy is {val_accuracy_3}')
-        print(f'Top-5 accuracy is {val_accuracy_5}')
-        val_accuracy = val_accuracy_1
-    else:
-        train_embeddings = scaler.fit_transform(train_embeddings)
-        val_embeddings = scaler.transform(val_embeddings)
-        #run the classifier
-        clf.fit(train_embeddings, train_labels)
-        val_accuracy = clf.score(val_embeddings, val_labels)
-        print(f'The validation set accuracy is {val_accuracy}')
-    return val_accuracy
-
-def get_dataset(args):
-    generator = torch.Generator().manual_seed(42)
-    if args.task_name == 'biome':
-        data_path = args.eval_dir
-        dataset = Biome_Dataset(data_path)
-        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
-        num_classes = dataset_train.dataset.num_classes
-    elif args.task_name == 'ecoregion':
-        data_path = args.eval_dir
-        dataset = Eco_Dataset(data_path)
-        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
-        num_classes = dataset_train.dataset.num_classes
-    elif args.task_name == 'country':
-        data_path = os.path.join(args.eval_dir,'country.csv')
-        dataset = Country_Dataset(data_path)
-        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
-        num_classes = dataset_train.dataset.num_classes
-    elif args.task_name=='ocean':
-        train_data_path = os.path.join(args.eval_dir,'land_ocean_train.csv')
-        test_data_path = os.path.join(args.eval_dir, 'land_ocean_test.csv')
-        dataset_train = Ocean_Dataset(train_data_path)
-        dataset_val = Ocean_Dataset(test_data_path)
-        num_classes = dataset_train.num_classes
-
-    elif args.task_name == 'temperature':
-        data_path = os.path.join(args.eval_dir, 'temp.csv')
-        dataset = Temp_Dataset(data_path)
-        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
-        num_classes = dataset_train.dataset.num_classes
-    elif args.task_name == 'housing':
-        data_path = os.path.join(args.eval_dir, 'housing.csv')
-        dataset = Housing_Dataset(data_path)
-        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
-        num_classes = dataset_train.dataset.num_classes
-    elif args.task_name == 'elevation':
-        data_path = os.path.join(args.eval_dir, 'elevation.csv')
-        dataset = Elevation_Dataset(data_path)
-        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
-        num_classes = dataset_train.dataset.num_classes
-    elif args.task_name == 'population':
-        data_path = os.path.join(args.eval_dir, 'population.csv')
-        dataset = Population_Dataset(data_path)
-        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
-        num_classes = dataset_train.dataset.num_classes
-
-    elif args.task_name == 'inat_1':
-        data_path = '/projects/bdec/adhakal2/hyper_satclip/data/eval_data/'
-        dataset_train = Inat_Dataset(data_path, type='train')
-        dataset_val = Inat_Dataset(data_path, type='val')
-        num_classes = dataset_train.num_classes
-
-    elif args.task_name == 'csv_data':
-        data_path = os.path.join(args.eval_dir,'/cont_haver.csv')
-        dataset_train = CSVDataset(data_path)
-        dataset_val  = CSVDataset(data_path)
-        num_classes = dataset_train.num_classes
-    elif 'era5' in args.task_name:
-        data_path = os.path.join(args.eval_dir, 'ERA5_Land_Clipped_2020.csv')
-        group = args.task_name.split('-')[-1]
-        dataset = ERA5_Dataset(data_path, group)
-        dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=generator)
-        num_classes = dataset.num_classes 
-    elif 'checker' in args.task_name:
-        num_support = int(args.task_name.split('_')[-1])
-        num_classes = 16
-        ds = CheckerDataset(num_samples=10000, num_classes=num_classes, num_support=num_support)
-        dataset_train = ds.train_ds
-        dataset_val = ds.evalu_ds
-        num_classes = num_classes
-    else:
-        raise ValueError('Task name not recognized')
-
-    train_loader = DataLoader(dataset_train, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False, drop_last=False)
-    val_loader = DataLoader(dataset_val, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False, drop_last=False)
-    return train_loader, val_loader, num_classes
 
 #change lat_lon in radians to cartesian coordinates
 def rad_to_cart(locations):
@@ -307,7 +101,6 @@ class LocationEncoder(nn.Module):
         super().__init__()
         self.args = args
         self.location_model_name = args.location_model_name
-        self.k = args.k
         #get the appropriate model
         #SatCLIP for encoding location
         if self.location_model_name == 'SatCLIP':
@@ -331,25 +124,27 @@ class LocationEncoder(nn.Module):
         #CSP_FMOW
         elif self.location_model_name == 'CSP':
             print('Using CSP-FMOW')
-            self.loc_model = get_csp(path='/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/csp/model_dir/model_fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar')
+            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'/csp/model_dir/model_fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar'))
             self.location_feature_dim = 256
         #CSP INAT
         elif self.location_model_name == 'CSP_INat':
             print('Using CSP-IN75.97lkjhat')
-            self.loc_model = get_csp(path='/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/csp/model_dir/model_inat_2018/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar')
+            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'/csp/model_dir/model_inat_2018/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar'))
             self.location_feature_dim = 256
         #GPS2Vec visual
+        ## does not work
         elif self.location_model_name == 'GPS2Vec_visual':
             print('Using GPS2Vec_visual')
             self.loc_model = DummyLocationEncoder()
             self.vectype = 'visual'
-            self.gps2vec_basedir = '/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/GPS2Vec'
+            self.gps2vec_basedir = os.path.join(args.pretrained_dir,'/GPS2Vec')
             self.location_feature_dim = 1365
         #GPS2Vec tag
+        ## does not work
         elif self.location_model_name == 'GPS2Vec_tag':
             print('Using GPS2Vec_tag')
             self.loc_model = DummyLocationEncoder()
-            self.gps2vec_basedir = '/projects/bdec/adhakal2/hyper_satclip/satclip/location_models/GPS2Vec'
+            self.gps2vec_basedir = os.path.join('GPS2Vec')
             self.vectype = 'tag'
             self.location_feature_dim = 2000    
         #Direct
@@ -394,21 +189,15 @@ class LocationEncoder(nn.Module):
             #load the database
             ranf_db = np.load(args.ranf_db, allow_pickle=True)
             self.db_locs_latlon = ranf_db['locs'].astype(np.float32)
-            if args.ranf_model == 'GeoCLIP':
-                #get the geoclip location encoder
-                self.loc_model = GeoCLIP().double()
-                self.location_feature_dim = 512 + 768
-                self.db_satclip_embeddings = ranf_db['geoclip_embeddings'].astype(np.float32)
-            elif args.ranf_model == 'SatCLIP':
-                #get satcilp location encoder
-                self.loc_model = get_satclip(
-                    hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
-                device=args.device).double()
-                self.db_satclip_embeddings = ranf_db['satclip_embeddings'].astype(np.float32)
-                self.location_feature_dim = 1024 + 256
-            else:
-                raise ValueError('Unimplemented RANF model. Should be GeoCLIP or SatCLIP')
+        
+            #get satcilp location encoder
+            self.loc_model = get_satclip(
+                hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
+            device=args.device).double()
+            self.db_satclip_embeddings = ranf_db['satclip_embeddings'].astype(np.float32)
+            self.location_feature_dim = 1024 + 256
             
+            #normalize the embeddings    
             self.db_satclip_embeddings = torch.tensor(self.db_satclip_embeddings/np.linalg.norm(self.db_satclip_embeddings, ord=2, axis=1, keepdims=True))
             self.db_high_resolution_satclip_embeddings = torch.tensor(ranf_db['image_embeddings'].astype(np.float32))
             
@@ -441,8 +230,6 @@ class LocationEncoder(nn.Module):
             elif self.location_model_name=='RANF_CLUSTER':
                 print('Using RANF_CLUSTER')
                 self.cluster_sizes = ranf_db['cluster_sizes']
-                self.args.k = 1
-                args.k = 1
                 self.location_feature_dim=1024+256
             elif 'HAVER_softmax' in self.location_model_name:
                 temp = float(self.location_model_name.split('_')[-1])
@@ -590,5 +377,6 @@ if __name__ == '__main__':
     elif args.eval_type == 'evaluate_npz':
         print('Evaluating embeddings from precomputed npz files')
         acc = evaluate_npz(args)
+        acc = np.round(acc, 3)
         print(f'Accuracy: {acc}')
         sys.stderr.write(f'Accuracy: {acc}')
