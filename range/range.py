@@ -1,3 +1,7 @@
+# This module is used to save the embeddings from the location models into a numpy file 
+# This module is also used to evaluate the embeddings for the downstream tasks
+# The location encoder that can be evaluated using this module are:RANGE, RANGE+, SatCLIP, GeoCLIP, TaxaBind, CSP, CSP_INat, SINR, Direct, Cartesian_3D, sphere2vec, theory
+
 import numpy as np
 import math
 import argparse
@@ -32,10 +36,10 @@ def get_args():
     parser = argparse.ArgumentParser(description='code for evaluating the embeddings')
     #location model arguments
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SatCLIP')
-    parser.add_argument('--ranf_db', type=str, default='/projects/bdec/adhakal2/range/data/models/ranf/ranf_satmae_db.npz')
-    parser.add_argument('--ranf_model', type=str, default='', choices=['GeoCLIP', 'SatCLIP',''])
+    parser.add_argument('--range_db', type=str, default='/projects/bdec/adhakal2/range/data/models/range/range_satmae_db.npz')
+    parser.add_argument('--range_model', type=str, default='', choices=['GeoCLIP', 'SatCLIP',''])
     parser.add_argument('--pretrained_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/satclip/location_models')
-    parser.add_argument('--beta', type=float, default=0.5, help='Beta value for RANF_COMBINED')  
+    parser.add_argument('--beta', type=float, default=0.5, help='Beta value for RANGE_COMBINED')  
     parser.add_argument('--task_name', type=str, help='Name of the task', default='biome')
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
     parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
@@ -185,21 +189,21 @@ class LocationEncoder(nn.Module):
             print('Using SINR')
             self.loc_model = SINR().double()
             self.location_feature_dim = 256
-        elif 'RANF' in self.location_model_name:
+        elif 'RANGE' in self.location_model_name:
             #load the database
-            ranf_db = np.load(args.ranf_db, allow_pickle=True)
-            self.db_locs_latlon = ranf_db['locs'].astype(np.float32)
+            range_db = np.load(args.range_db, allow_pickle=True)
+            self.db_locs_latlon = range_db['locs'].astype(np.float32)
         
             #get satcilp location encoder
             self.loc_model = get_satclip(
                 hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
             device=args.device).double()
-            self.db_satclip_embeddings = ranf_db['satclip_embeddings'].astype(np.float32)
+            self.db_satclip_embeddings = range_db['satclip_embeddings'].astype(np.float32)
             self.location_feature_dim = 1024 + 256
             
             #normalize the embeddings    
             self.db_satclip_embeddings = torch.tensor(self.db_satclip_embeddings/np.linalg.norm(self.db_satclip_embeddings, ord=2, axis=1, keepdims=True))
-            self.db_high_resolution_satclip_embeddings = torch.tensor(ranf_db['image_embeddings'].astype(np.float32))
+            self.db_high_resolution_satclip_embeddings = torch.tensor(range_db['image_embeddings'].astype(np.float32))
             
             #convert lon, lat to radians
             self.db_locs = self.db_locs_latlon * math.pi/180
@@ -211,41 +215,38 @@ class LocationEncoder(nn.Module):
                 self.db_satclip_embeddings = torch.tensor(self.db_satclip_embeddings).to(args.device)
                 self.db_locs_xyz = torch.tensor(self.db_locs_xyz).to(args.device)
 
-            if self.location_model_name=='RANF':
-                print('Using RANF')
-                self.location_feature_dim=1024
                 #create the index
-            elif self.location_model_name=='RANF_HILO':
-                print('Using RANF_HILO')
+            elif self.location_model_name=='RANGE_HILO':
+                print('Using RANGE_HILO')
                 self.location_feature_dim=1024+256
                 
-            elif self.location_model_name=='RANF_HAVER':
-                print('Using RANF_HAVER')
+            elif self.location_model_name=='RANGE_HAVER':
+                print('Using RANGE_HAVER')
                 self.location_feature_dim=1024+256
             #combine semantic and distance based embeddings
-            elif self.location_model_name=='RANF_COMBINED':
-                print('Using RANF_COMBINED')
+            elif self.location_model_name=='RANGE_COMBINED':
+                print('Using RANGE_COMBINED')
                 self.location_feature_dim=1024+256  
-            #clustered based RANF
-            elif self.location_model_name=='RANF_CLUSTER':
-                print('Using RANF_CLUSTER')
-                self.cluster_sizes = ranf_db['cluster_sizes']
+            #clustered based RANGE
+            elif self.location_model_name=='RANGE_CLUSTER':
+                print('Using RANGE_CLUSTER')
+                self.cluster_sizes = range_db['cluster_sizes']
                 self.location_feature_dim=1024+256
             elif 'HAVER_softmax' in self.location_model_name:
                 temp = float(self.location_model_name.split('_')[-1])
                 self.args.geo_temp = temp
-                print(f'Using RANF_softmax with temperature {self.args.geo_temp}')
+                print(f'Using RANGE_softmax with temperature {self.args.geo_temp}')
             elif  'HILO_softmax' in self.location_model_name:    
                 temp = float(self.location_model_name.split('_')[-1])
                 self.args.temp = temp
-                print(f'Using RANF_softmax with temperature {self.args.temp}')
+                print(f'Using RANGE_softmax with temperature {self.args.temp}')
             elif 'COMBINED_softmax' in self.location_model_name:
                 semantic_temp = float(self.location_model_name.split('_')[-2])
                 geo_temp = float(self.location_model_name.split('_')[-1])
                 self.args.geo_temp = geo_temp
                 self.args.temp = semantic_temp
-                print(f'Using RANF_COMBINED_softmax with temperatures {self.args.temp} and {self.args.geo_temp}')
-            #ranf using geoclip
+                print(f'Using range_COMBINED_softmax with temperatures {self.args.temp} and {self.args.geo_temp}')
+            #range using geoclip
             
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
@@ -285,7 +286,7 @@ class LocationEncoder(nn.Module):
             loc_embeddings = self.loc_model(coords)
         elif 's2vec' in self.location_model_name:
             loc_embeddings = self.loc_model(coords)
-        elif 'RANF' in self.location_model_name:
+        elif 'range' in self.location_model_name:
             #get the satclip embeddings for the given location
             curr_loc_embeddings = self.loc_model(coords).to(self.args.device)
             #normalize the embeddings
@@ -301,12 +302,12 @@ class LocationEncoder(nn.Module):
                 high_res_similarity = torch.nn.functional.softmax(high_res_similarity * self.args.temp, dim=-1) #batch, num_db
                 high_res_embeddings = high_res_similarity @ self.db_high_resolution_satclip_embeddings.to(self.args.device) #batch, 1024
             #only send the rich image features
-            if self.location_model_name=='RANF':
+            if self.location_model_name=='range':
                 loc_embeddings = high_res_embeddings
             #concatenate rich image features with low res location features
-            elif self.location_model_name=='RANF_HILO' or self.location_model_name=='RANF_CLUSTER' or 'RANF_HILO_softmax' in self.location_model_name:
+            elif self.location_model_name=='range_HILO' or self.location_model_name=='range_CLUSTER' or 'range_HILO_softmax' in self.location_model_name:
                 loc_embeddings = np.concatenate((high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
-            elif self.location_model_name=='RANF_HAVER' or self.location_model_name=='RANF_COMBINED':
+            elif self.location_model_name=='range_HAVER' or self.location_model_name=='range_COMBINED':
                 #lon, lat
                 query_locations_latlon = coords.cpu().numpy()
                 #convert to radians
@@ -319,12 +320,12 @@ class LocationEncoder(nn.Module):
                 ang_top_indices = ang_top_indices.cpu()
                 angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[ang_top_indices]
                 angular_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
-                if self.location_model_name=='RANF_HAVER':
+                if self.location_model_name=='range_HAVER':
                     loc_embeddings = np.concatenate((angular_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
-                elif self.location_model_name=='RANF_COMBINED':
+                elif self.location_model_name=='range_COMBINED':
                     averaged_high_res_embeddings = 0*angular_high_res_embeddings + 1.0*high_res_embeddings
                     loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
-            elif 'RANF_HAVER_softmax' in self.location_model_name or 'RANF_COMBINED_softmax' in self.location_model_name:
+            elif 'range_HAVER_softmax' in self.location_model_name or 'range_COMBINED_softmax' in self.location_model_name:
                 query_locations_latlon = coords.cpu().numpy()
                 #convert to radians
                 query_locations = query_locations_latlon * math.pi/180
@@ -337,16 +338,16 @@ class LocationEncoder(nn.Module):
                 angular_similarity = nn.functional.softmax(angular_similarity * self.args.geo_temp, dim=-1)
                 #get the scale averaged high res embeddings
                 angular_high_res_embeddings = angular_similarity @ self.db_high_resolution_satclip_embeddings.to(self.args.device)
-                if 'RANF_HAVER' in self.location_model_name:
+                if 'range_HAVER' in self.location_model_name:
                     #concatenate this with the low res values
                     loc_embeddings = np.concatenate((angular_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
-                elif 'RANF_COMBINED' in self.location_model_name:
+                elif 'range_COMBINED' in self.location_model_name:
                     #compute the average between the two high res embeddings
                     averaged_high_res_embeddings = (1-self.args.beta)*angular_high_res_embeddings + self.args.beta*high_res_embeddings
                     #concatenate this with the low res values
                     loc_embeddings = np.concatenate((averaged_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
             else:
-                raise ValueError('Unimplemented RANF')
+                raise ValueError('Unimplemented range')
 
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
