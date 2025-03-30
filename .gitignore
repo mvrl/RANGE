@@ -1,5 +1,4 @@
 *.pyc
-pretrained/
 data/
 logs/
 fit.sh
@@ -12,3 +11,6 @@ run_job.sh
 *.zip
 run_ica.sh
 satclip/evaluation/inat/
+*.tar
+*.ckpt
+*.pt
