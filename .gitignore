@@ -1,4 +1,5 @@
 *.pyc
+pretrained/
 data/
 logs/
 fit.sh

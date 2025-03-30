@@ -80,9 +80,9 @@ class LocationEncoder(nn.Module):
         #SatCLIP for encoding location
         if self.location_model_name == 'SatCLIP':
             print('Using SatCLIP')
+            ckpt = os.path.join(args.pretrained_dir,'/satclip/satclip-vit16-l40.ckpt')
             self.loc_model = get_satclip(
-                    hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
-                device=args.device).double()
+                    ckpt, device=args.device).double()
             self.location_feature_dim = 256  
         #satclip for encoding location and image
         elif self.location_model_name == 'GeoCLIP':
@@ -99,12 +99,12 @@ class LocationEncoder(nn.Module):
         #CSP_FMOW
         elif self.location_model_name == 'CSP':
             print('Using CSP-FMOW')
-            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'/csp/model_dir/model_fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar'))
+            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'/csp/fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar'))
             self.location_feature_dim = 256
         #CSP INAT
         elif self.location_model_name == 'CSP_INat':
             print('Using CSP-IN75.97lkjhat')
-            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'/csp/model_dir/model_inat_2018/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar'))
+            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'/csp/inat/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar'))
             self.location_feature_dim = 256
         #GPS2Vec visual
         ## does not work
@@ -166,9 +166,9 @@ class LocationEncoder(nn.Module):
             self.db_locs_latlon = range_db['locs'].astype(np.float32)
         
             #get satcilp location encoder
+            ckpt = os.path.join(args.pretrained_dir,'/satclip/satclip-vit16-l40.ckpt')
             self.loc_model = get_satclip(
-                hf_hub_download("microsoft/SatCLIP-ViT16-L40", "satclip-vit16-l40.ckpt", force_download=False),
-            device=args.device).double()
+                    ckpt, device=args.device).double()
             self.db_satclip_embeddings = range_db['satclip_embeddings'].astype(np.float32)
             self.location_feature_dim = 1024 + 256
             
@@ -217,6 +217,7 @@ class LocationEncoder(nn.Module):
         elif 'CSP' in self.location_model_name:
             loc_embeddings = self.loc_model(coords, return_feats=True)
         elif 'GPS2Vec' in self.location_model_name:
+            #does not work
             coords = coords.cpu().numpy()
             loc_embeddings = get_gps2vec(np.flip(coords,1),
             self.gps2vec_basedir,model=self.vectype)
