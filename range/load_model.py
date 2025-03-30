@@ -12,7 +12,7 @@ import torch
 from argparse import Namespace
 from .range import LocationEncoder
 
-def load_model(model_name='RANGE+', model_path=None, device='cuda', **kwargs):
+def load_model(model_name='RANGE+', pretrained_dir='./pretrained', device='cuda', **kwargs):
     """
     Load the specified location encoder model.
 
@@ -39,7 +39,7 @@ def load_model(model_name='RANGE+', model_path=None, device='cuda', **kwargs):
         db_path = None
         beta = None
     #create namespace object
-    args = Namespace(location_model_name=model_name, pretrained_dir=model_path,device=device,
+    args = Namespace(location_model_name=model_name, pretrained_dir=pretrained_dir,device=device,
                       range_db=db_path, beta=beta)
     #load the model
     model = LocationEncoder(args)
@@ -49,11 +49,11 @@ def load_model(model_name='RANGE+', model_path=None, device='cuda', **kwargs):
 
 if __name__ == '__main__':
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model_dir = '/projects/bdec/adhakal2/hyper_satclip/satclip/location_models'
+    pretrained_dir = './pretrained'
     model_name = 'RANGE+'
     beta = 0.5
     db_path = '/projects/bdec/adhakal2/range/data/models/ranf/ranf_satmae_db.npz'
-    rangep_model = load_model(model_name=model_name, model_path=model_dir,
+    rangep_model = load_model(model_name=model_name, model_path=pretrained_dir,
                                device=device, db_path=db_path, beta=beta)
     a = torch.rand(10000,2).double().to(device)
     import code; code.interact(local=dict(globals(), **locals()))

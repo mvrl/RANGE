@@ -80,7 +80,7 @@ class LocationEncoder(nn.Module):
         #SatCLIP for encoding location
         if self.location_model_name == 'SatCLIP':
             print('Using SatCLIP')
-            ckpt = os.path.join(args.pretrained_dir,'/satclip/satclip-vit16-l40.ckpt')
+            ckpt = os.path.join(args.pretrained_dir,'satclip/satclip-vit16-l40.ckpt')
             self.loc_model = get_satclip(
                     ckpt, device=args.device).double()
             self.location_feature_dim = 256  
@@ -93,18 +93,18 @@ class LocationEncoder(nn.Module):
         elif self.location_model_name == 'TaxaBind':
             print('Using TaxaBind')
             self.loc_model = GeoCLIP().double()
-            ckpt = torch.load(args.pretrained_dir, '/taxabind/patched_location_encoder.pt', map_location=args.device)
+            ckpt = torch.load(args.pretrained_dir, 'taxabind/patched_location_encoder.pt', map_location=args.device)
             self.loc_model.load_state_dict(ckpt)
             self.location_feature_dim = 512
         #CSP_FMOW
         elif self.location_model_name == 'CSP':
             print('Using CSP-FMOW')
-            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'/csp/fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar'))
+            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'csp/fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar'))
             self.location_feature_dim = 256
         #CSP INAT
         elif self.location_model_name == 'CSP_INat':
             print('Using CSP-IN75.97lkjhat')
-            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'/csp/inat/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar'))
+            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'csp/inat/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar'))
             self.location_feature_dim = 256
         #GPS2Vec visual
         ## does not work
@@ -166,7 +166,7 @@ class LocationEncoder(nn.Module):
             self.db_locs_latlon = range_db['locs'].astype(np.float32)
         
             #get satcilp location encoder
-            ckpt = os.path.join(args.pretrained_dir,'/satclip/satclip-vit16-l40.ckpt')
+            ckpt = os.path.join(args.pretrained_dir,'range/satclip-vit16-l40.ckpt')
             self.loc_model = get_satclip(
                     ckpt, device=args.device).double()
             self.db_satclip_embeddings = range_db['satclip_embeddings'].astype(np.float32)
