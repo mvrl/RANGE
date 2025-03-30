@@ -14,3 +14,4 @@ satclip/evaluation/inat/
 *.tar
 *.ckpt
 *.pt
+*.DS_Store
