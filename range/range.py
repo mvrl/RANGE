@@ -29,8 +29,9 @@ from .location_models.satclip.positional_encoding.wrap import Wrap
 from .utils.save import save_embeddings
 from .utils.evaluate import evaluate_npz
 from .utils.load_dataset import get_dataset
+from .utils.utils import rad_to_cart
 
-# Suppress all FutureWarnings
+
 EARTH_RADIUS=6371
 def get_args():
     parser = argparse.ArgumentParser(description='code for evaluating the embeddings')
@@ -62,37 +63,6 @@ def get_args():
     return args
 
 
-#change lat_lon in radians to cartesian coordinates
-def rad_to_cart(locations):
-    x = np.cos(locations[:,1]) * np.cos(locations[:,0])
-    y = np.cos(locations[:,1]) * np.sin(locations[:,0])
-    z = np.sin(locations[:,1])
-    xyz = np.stack([x, y, z], axis=1)
-    return xyz
-
-def my_sigmoid(x):
-    return 1/(1+np.exp(-x))
-#inflection point defines at which distance we want to weight 0.5
-def shifted_sigmoid(a, inflection_point=15):
-    shifted = a-inflection_point
-    return 1-my_sigmoid(shifted)
-
-def compute_haversine(X, Y, radians=False):
-    lon_1 = X[:,0]
-    lat_1 = X[:,1]
-    lon_2 = Y[:,0]
-    lat_2 = Y[:,1]
-    if not radians:
-        lon_1 = lon_1 * math.pi/180
-        lat_1 = lat_1 * math.pi/180
-        lon_2 = lon_2 * math.pi/180
-        lat_2 = lat_2 * math.pi/180
-    #compute the distance
-    a = np.sin((lat_2-lat_1)/2)**2 + np.cos(lat_1)*np.cos(lat_2)*np.sin((lon_2-lon_1)/2)**2
-    c = 2*np.arctan2(np.sqrt(a), np.sqrt(1-a))
-    d = EARTH_RADIUS*c
-    return d
-
 #Dummy location encoder
 class DummyLocationEncoder(nn.Module):
     def __init__(self):
@@ -122,7 +92,7 @@ class LocationEncoder(nn.Module):
         elif self.location_model_name == 'TaxaBind':
             print('Using TaxaBind')
             self.loc_model = GeoCLIP().double()
-            ckpt = torch.load('/projects/bdec/adhakal2/hyper_satclip/data/models/patched_location_encoder.pt', map_location=args.device)
+            ckpt = torch.load(args.pretrained_dir, '/taxabind/patched_location_encoder.pt', map_location=args.device)
             self.loc_model.load_state_dict(ckpt)
             self.location_feature_dim = 512
         #CSP_FMOW
@@ -214,38 +184,18 @@ class LocationEncoder(nn.Module):
             if args.device=='cuda':
                 self.db_satclip_embeddings = torch.tensor(self.db_satclip_embeddings).to(args.device)
                 self.db_locs_xyz = torch.tensor(self.db_locs_xyz).to(args.device)
-
-                #create the index
-            elif self.location_model_name=='RANGE_HILO':
-                print('Using RANGE_HILO')
-                self.location_feature_dim=1024+256
-                
-            elif self.location_model_name=='RANGE_HAVER':
-                print('Using RANGE_HAVER')
-                self.location_feature_dim=1024+256
-            #combine semantic and distance based embeddings
-            elif self.location_model_name=='RANGE_COMBINED':
-                print('Using RANGE_COMBINED')
-                self.location_feature_dim=1024+256  
-            #clustered based RANGE
-            elif self.location_model_name=='RANGE_CLUSTER':
-                print('Using RANGE_CLUSTER')
-                self.cluster_sizes = range_db['cluster_sizes']
-                self.location_feature_dim=1024+256
-            elif 'HAVER_softmax' in self.location_model_name:
-                temp = float(self.location_model_name.split('_')[-1])
-                self.args.geo_temp = temp
-                print(f'Using RANGE_softmax with temperature {self.args.geo_temp}')
-            elif  'HILO_softmax' in self.location_model_name:    
-                temp = float(self.location_model_name.split('_')[-1])
+            #use RANGE model
+            if 'plus' not in self.location_model_name:    
+                temp = 15.0
                 self.args.temp = temp
-                print(f'Using RANGE_softmax with temperature {self.args.temp}')
-            elif 'COMBINED_softmax' in self.location_model_name:
-                semantic_temp = float(self.location_model_name.split('_')[-2])
-                geo_temp = float(self.location_model_name.split('_')[-1])
+                print(f'Using RANGE with temperature {self.args.temp}')
+            # use RANGE+ model
+            elif 'plus' in self.location_model_name:
+                semantic_temp = 12.0
+                geo_temp = 40.0
                 self.args.geo_temp = geo_temp
                 self.args.temp = semantic_temp
-                print(f'Using range_COMBINED_softmax with temperatures {self.args.temp} and {self.args.geo_temp}')
+                print(f'Using RANGE+ with temperatures {self.args.temp} and {self.args.geo_temp}')
             #range using geoclip
             
         else:
@@ -286,46 +236,23 @@ class LocationEncoder(nn.Module):
             loc_embeddings = self.loc_model(coords)
         elif 's2vec' in self.location_model_name:
             loc_embeddings = self.loc_model(coords)
-        elif 'range' in self.location_model_name:
+        elif 'RANGE' in self.location_model_name:
             #get the satclip embeddings for the given location
             curr_loc_embeddings = self.loc_model(coords).to(self.args.device)
-            #normalize the embeddings
+            #normalize the embeddings and compute similarity
             curr_loc_embeddings = curr_loc_embeddings/curr_loc_embeddings.norm(p=2, dim=-1, keepdim=True)
             high_res_similarity = curr_loc_embeddings.float() @ self.db_satclip_embeddings.t()
-            if 'softmax' not in self.location_model_name:
-                top_values, top_indices = torch.topk(high_res_similarity, k=self.args.k, dim=1)
-                top_indices = top_indices.cpu() 
-                # Get the corresponding highres_embeddings
-                high_res_embeddings = self.db_high_resolution_satclip_embeddings[top_indices]
-                high_res_embeddings = high_res_embeddings.mean(axis=1)
-            elif 'HILO_softmax' in self.location_model_name or 'COMBINED_softmax' in self.location_model_name:
-                high_res_similarity = torch.nn.functional.softmax(high_res_similarity * self.args.temp, dim=-1) #batch, num_db
-                high_res_embeddings = high_res_similarity @ self.db_high_resolution_satclip_embeddings.to(self.args.device) #batch, 1024
-            #only send the rich image features
-            if self.location_model_name=='range':
-                loc_embeddings = high_res_embeddings
+            #scale similarity using temp and convert to probabilities
+            high_res_similarity = torch.nn.functional.softmax(high_res_similarity * self.args.temp, dim=-1) #batch, num_db
+            #compute the highres embeddings as a weighted sum of databased embeddings
+            high_res_embeddings = high_res_similarity @ self.db_high_resolution_satclip_embeddings.to(self.args.device) #batch, 1024
+
             #concatenate rich image features with low res location features
-            elif self.location_model_name=='range_HILO' or self.location_model_name=='range_CLUSTER' or 'range_HILO_softmax' in self.location_model_name:
+            if self.location_model_name=='RANGE':
+                # RANGE embeddings
                 loc_embeddings = np.concatenate((high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
-            elif self.location_model_name=='range_HAVER' or self.location_model_name=='range_COMBINED':
-                #lon, lat
-                query_locations_latlon = coords.cpu().numpy()
-                #convert to radians
-                query_locations = query_locations_latlon * math.pi/180
-                #convert to cartesian coordinates
-                query_locations_xyz = torch.tensor(rad_to_cart(query_locations))
-                angular_similarity = query_locations_xyz.float().to(args.device) @ self.db_locs_xyz.T                
-                
-                ang_top_values, ang_top_indices = torch.topk(angular_similarity, k=self.args.k, dim=1)
-                ang_top_indices = ang_top_indices.cpu()
-                angular_high_res_embeddings = self.db_high_resolution_satclip_embeddings[ang_top_indices]
-                angular_high_res_embeddings = angular_high_res_embeddings.mean(axis=1)
-                if self.location_model_name=='range_HAVER':
-                    loc_embeddings = np.concatenate((angular_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
-                elif self.location_model_name=='range_COMBINED':
-                    averaged_high_res_embeddings = 0*angular_high_res_embeddings + 1.0*high_res_embeddings
-                    loc_embeddings = np.concatenate((averaged_high_res_embeddings, curr_loc_embeddings.cpu()), axis=1)
-            elif 'range_HAVER_softmax' in self.location_model_name or 'range_COMBINED_softmax' in self.location_model_name:
+            elif self.location_model_name=='RANGE+':
+                # RANGE+ embeddings
                 query_locations_latlon = coords.cpu().numpy()
                 #convert to radians
                 query_locations = query_locations_latlon * math.pi/180
@@ -338,16 +265,12 @@ class LocationEncoder(nn.Module):
                 angular_similarity = nn.functional.softmax(angular_similarity * self.args.geo_temp, dim=-1)
                 #get the scale averaged high res embeddings
                 angular_high_res_embeddings = angular_similarity @ self.db_high_resolution_satclip_embeddings.to(self.args.device)
-                if 'range_HAVER' in self.location_model_name:
-                    #concatenate this with the low res values
-                    loc_embeddings = np.concatenate((angular_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
-                elif 'range_COMBINED' in self.location_model_name:
-                    #compute the average between the two high res embeddings
-                    averaged_high_res_embeddings = (1-self.args.beta)*angular_high_res_embeddings + self.args.beta*high_res_embeddings
-                    #concatenate this with the low res values
-                    loc_embeddings = np.concatenate((averaged_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
+                #compute the average between the two high res embeddings
+                averaged_high_res_embeddings = (1-self.args.beta)*angular_high_res_embeddings + self.args.beta*high_res_embeddings
+                #concatenate this with the low res values
+                loc_embeddings = np.concatenate((averaged_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
             else:
-                raise ValueError('Unimplemented range')
+                raise ValueError('Unimplemented RANGE model')
 
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
