@@ -1,3 +1,5 @@
+## this script is used to generate the database for the range model
+
 import torch
 import numpy as np
 import argparse

@@ -1,6 +1,7 @@
-# This module is used to save the embeddings from the location models into a numpy file 
-# This module is also used to evaluate the embeddings for the downstream tasks
+# This module is used to save the embeddings from the location models into a numpy file: using --eval_type=save_embeddings 
+# This module is also used to evaluate the embeddings for the downstream tasks: using --eval_type=evaluate_npz
 # The location encoder that can be evaluated using this module are:RANGE, RANGE+, SatCLIP, GeoCLIP, TaxaBind, CSP, CSP_INat, SINR, Direct, Cartesian_3D, sphere2vec, theory
+# the desired location encoder can be selected using the --location_model_name argument
 
 import numpy as np
 import math
@@ -37,13 +38,13 @@ def get_args():
     parser = argparse.ArgumentParser(description='code for evaluating the embeddings')
     #location model arguments
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SatCLIP')
-    parser.add_argument('--range_db', type=str, default='/projects/bdec/adhakal2/range/data/models/range/range_satmae_db.npz')
-    parser.add_argument('--range_model', type=str, default='', choices=['GeoCLIP', 'SatCLIP',''])
+    parser.add_argument('--range_db', type=str, default='/projects/bdec/adhakal2/range/data/models/ranf/ranf_satmae_db.npz')
+    parser.add_argument('--range_model', type=str, default='', choices=['SatCLIP',''])
     parser.add_argument('--pretrained_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/satclip/location_models')
     parser.add_argument('--beta', type=float, default=0.5, help='Beta value for RANGE_COMBINED')  
     parser.add_argument('--task_name', type=str, help='Name of the task', default='biome')
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
-    parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
+    parser.add_argument('--batch_size', type=int, help='Batch size', default=5000)
     parser.add_argument('--num_workers', type=int, help='Number of workers', default=6)
 
     #logging arguments
@@ -185,18 +186,20 @@ class LocationEncoder(nn.Module):
                 self.db_satclip_embeddings = torch.tensor(self.db_satclip_embeddings).to(args.device)
                 self.db_locs_xyz = torch.tensor(self.db_locs_xyz).to(args.device)
             #use RANGE model
-            if 'plus' not in self.location_model_name:    
+            if self.location_model_name == 'RANGE':    
                 temp = 15.0
                 self.args.temp = temp
                 print(f'Using RANGE with temperature {self.args.temp}')
             # use RANGE+ model
-            elif 'plus' in self.location_model_name:
+            elif self.location_model_name == 'RANGE+':
                 semantic_temp = 12.0
                 geo_temp = 40.0
                 self.args.geo_temp = geo_temp
                 self.args.temp = semantic_temp
                 print(f'Using RANGE+ with temperatures {self.args.temp} and {self.args.geo_temp}')
-            #range using geoclip
+            else:
+                raise ValueError('Unimplemented RANGE model')
+            
             
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
