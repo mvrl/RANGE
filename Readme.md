@@ -32,9 +32,7 @@ Our method enforces a spatial smoothness constraint. Manipulating this constrain
 ![](images/beta_interpolation_2.png)
 
 ## ⚙️ Usage
-The required model weights and embeddings are made available in huggingface.
-
-
+The required model weights and embeddings are made available in huggingface. 
 
 📑 Citation
 
