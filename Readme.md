@@ -1,4 +1,4 @@
-# RANGE: Retrieval Augmented Neural Fields for Multi-Resolution Geo-Embeddings (CVPR 2025)
+# RANGE: Retrieval Augmented Neural Fields for Multi-Resolution Geo-Embeddings (CVPR 2025) 🌎🌏🌍
 <div align="center">
 
 [![Static Badge](https://img.shields.io/badge/2502.19781-red?label=arxiv)](https://arxiv.org/abs/2502.19781)
@@ -16,11 +16,20 @@
 
 
 </div>
-
+<br>
+<br>
 This repository is the official implementation of [RANGE](https://arxiv.org/abs/2502.19781).
 RANGE (Retrieval Augmented Neural Fields for Multi-Resolution Geo-Embeddings) is a retrieval-augmented framework for embedding geographic coordinates. RANGE directly estimates the visual features for a given location, allowing the representations to capture high-resolution information. 
 
-![](imgs/framework_2.jpg)
+![](images/framework_cam.jpg)
+
+## 🏋️‍♂️ Performance on Downstream Tasks
+We showed through a large number of downstream tasks that RANGE embeddings outperform several state-of-the-art location embedding methods such as SatCLIP, GeoCLIP, CSP, etc.
+![](images/downstream.png)
+
+## 🔥 Multi-scale Geoembeddings
+Our method enforces a spatial smoothness constraint. Manipulating this constraint allows generating geo-embeddings at desired frequencies.
+![](images/beta_interpolation_2.png)
 
 ## ⚙️ Usage
 The required model weights and embeddings are made available in huggingface.
