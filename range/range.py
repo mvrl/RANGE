@@ -106,22 +106,6 @@ class LocationEncoder(nn.Module):
             print('Using CSP-IN75.97lkjhat')
             self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'csp/inat/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar'))
             self.location_feature_dim = 256
-        #GPS2Vec visual
-        ## does not work
-        elif self.location_model_name == 'GPS2Vec_visual':
-            print('Using GPS2Vec_visual')
-            self.loc_model = DummyLocationEncoder()
-            self.vectype = 'visual'
-            self.gps2vec_basedir = os.path.join(args.pretrained_dir,'/GPS2Vec')
-            self.location_feature_dim = 1365
-        #GPS2Vec tag
-        ## does not work
-        elif self.location_model_name == 'GPS2Vec_tag':
-            print('Using GPS2Vec_tag')
-            self.loc_model = DummyLocationEncoder()
-            self.gps2vec_basedir = os.path.join('GPS2Vec')
-            self.vectype = 'tag'
-            self.location_feature_dim = 2000    
         #Direct
         elif self.location_model_name == 'Direct':
             print('Using Direct Encoding')
@@ -209,38 +193,8 @@ class LocationEncoder(nn.Module):
 
     #return the location embeddings
     def forward(self, coords):
-        if self.location_model_name == 'SatCLIP':
-            loc_embeddings = self.loc_model(coords)
-        elif self.location_model_name == 'GeoCLIP':
-            coords = coords[:,[1,0]]
-            loc_embeddings = self.loc_model(coords)
-        elif 'CSP' in self.location_model_name:
-            loc_embeddings = self.loc_model(coords, return_feats=True)
-        elif 'GPS2Vec' in self.location_model_name:
-            #does not work
-            coords = coords.cpu().numpy()
-            loc_embeddings = get_gps2vec(np.flip(coords,1),
-            self.gps2vec_basedir,model=self.vectype)
-        elif self.location_model_name == 'TaxaBind':
-            coords = coords[:,[1,0]]
-            loc_embeddings = self.loc_model(coords)
-        elif self.location_model_name == 'Direct':
-            coords_rad = coords * math.pi/180
-            loc_embeddings = self.loc_model(coords_rad)
-        elif self.location_model_name == 'Cartesian_3D':
-            coords_rad = coords * math.pi/180
-            coords_cart = rad_to_cart(coords_rad.cpu().numpy())
-            loc_embeddings = self.loc_model(coords_cart)
-        elif self.location_model_name == 'Theory':
-            loc_embeddings = self.loc_model(coords)
-        elif self.location_model_name == 'Wrap':
-            loc_embeddings = self.loc_model(coords)
-        elif self.location_model_name == 'SINR':
-            coords = preprocess_sinr(coords)
-            loc_embeddings = self.loc_model(coords)
-        elif 's2vec' in self.location_model_name:
-            loc_embeddings = self.loc_model(coords)
-        elif 'RANGE' in self.location_model_name:
+        ###############  RANGE  #####################
+        if 'RANGE' in self.location_model_name:
             #get the satclip embeddings for the given location
             curr_loc_embeddings = self.loc_model(coords).to(self.args.device)
             #normalize the embeddings and compute similarity
@@ -275,7 +229,39 @@ class LocationEncoder(nn.Module):
                 loc_embeddings = np.concatenate((averaged_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
             else:
                 raise ValueError('Unimplemented RANGE model')
-
+        ###############  SatCLIP #####################
+        elif self.location_model_name == 'SatCLIP':
+            loc_embeddings = self.loc_model(coords)
+        ###############  GeoCLIP #####################
+        elif self.location_model_name == 'GeoCLIP':
+            coords = coords[:,[1,0]]
+            loc_embeddings = self.loc_model(coords)
+        #################  CSP #####################
+        elif 'CSP' in self.location_model_name:
+            loc_embeddings = self.loc_model(coords, return_feats=True)
+        #################  SINR #####################
+        elif self.location_model_name == 'SINR':
+            coords = preprocess_sinr(coords)
+            loc_embeddings = self.loc_model(coords)
+        ################ taxaBind #####################
+        elif self.location_model_name == 'TaxaBind':
+            coords = coords[:,[1,0]]
+            loc_embeddings = self.loc_model(coords)
+        ################ training-free methods #####################
+        elif self.location_model_name == 'Direct':
+            coords_rad = coords * math.pi/180
+            loc_embeddings = self.loc_model(coords_rad)
+        elif self.location_model_name == 'Cartesian_3D':
+            coords_rad = coords * math.pi/180
+            coords_cart = rad_to_cart(coords_rad.cpu().numpy())
+            loc_embeddings = self.loc_model(coords_cart)
+        elif self.location_model_name == 'Theory':
+            loc_embeddings = self.loc_model(coords)
+        elif self.location_model_name == 'Wrap':
+            loc_embeddings = self.loc_model(coords)
+        
+        elif 's2vec' in self.location_model_name:
+            loc_embeddings = self.loc_model(coords)
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
         return loc_embeddings
