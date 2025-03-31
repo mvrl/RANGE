@@ -69,6 +69,7 @@ beta = 0.5
 rangep_model = load_model(model_name='RANGE+', 
                           pretrained_dir=pretrained_dir, device='cuda', db_path=db_path, beta=0.5)
 #generate embeddings
+#for optimal performance, use a veryyy large batch size. We consistently used a batch size of 10000 or higher when computing embeddings.
 locs = torch.rand(10000, 2).double().to(device)
 embeddings = rangep_model(locs)
 print(embeddings.shape)
