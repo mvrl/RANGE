@@ -38,7 +38,7 @@ def get_args():
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SatCLIP')
     parser.add_argument('--range_db', type=str, default='/projects/bdec/adhakal2/range/data/models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--range_model', type=str, default='', choices=['SatCLIP',''])
-    parser.add_argument('--pretrained_dir', type=str, default='./pretrained')
+    parser.add_argument('--pretrained_path', type=str, default='', help='Path to the pretrained model')
     parser.add_argument('--beta', type=float, default=0.5, help='Beta value for RANGE_COMBINED')  
     parser.add_argument('--task_name', type=str, help='Name of the task', default='biome')
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
@@ -82,7 +82,7 @@ class LocationEncoder(nn.Module):
             self.db_locs_latlon = range_db['locs'].astype(np.float32)
 
             #get satcilp location encoder
-            ckpt = os.path.join(args.pretrained_dir,'range/satclip-vit16-l40.ckpt')
+            ckpt = args.pretrained_path
             self.loc_model = get_satclip(
                     ckpt, device=args.device).double()
             self.db_satclip_embeddings = range_db['satclip_embeddings'].astype(np.float32)
@@ -119,7 +119,7 @@ class LocationEncoder(nn.Module):
         #SatCLIP for encoding location
         elif self.location_model_name == 'SatCLIP':
             print('Using SatCLIP')
-            ckpt = os.path.join(args.pretrained_dir,'satclip/satclip-vit16-l40.ckpt')
+            ckpt = args.pretrained_path
             self.loc_model = get_satclip(
                     ckpt, device=args.device).double()
             self.location_feature_dim = 256  
@@ -141,13 +141,13 @@ class LocationEncoder(nn.Module):
         #CSP_FMOW
         elif self.location_model_name == 'CSP':
             print('Using CSP-FMOW')
-            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'csp/fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar'))
+            self.loc_model = get_csp(path=args.pretrained_path)
             self.location_feature_dim = 256
         
         #CSP INAT
         elif self.location_model_name == 'CSP_INat':
             print('Using CSP-IN75.97lkjhat')
-            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'csp/inat/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar'))
+            self.loc_model = get_csp(path=args.pretrained_path)
             self.location_feature_dim = 256
         
         #Direct
