@@ -19,7 +19,7 @@
 <br>
 <br>
 This repository is the official implementation of RANGE. RANGE (Retrieval Augmented Neural Fields for Multi-Resolution Geo-Embeddings) is a retrieval-augmented framework for embedding geographic coordinates. RANGE directly estimates the visual features for a given location, allowing the representations to capture high-resolution information. 
-
+<br>
 <br>
 
 ![](images/framework_cam.jpg)
