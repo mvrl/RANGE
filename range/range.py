@@ -11,7 +11,6 @@ import sys
 
 import torch
 import torch.nn as nn
-from huggingface_hub import hf_hub_download
 
 #loading different location models
 
@@ -76,78 +75,12 @@ class LocationEncoder(nn.Module):
         self.args = args
         self.location_model_name = args.location_model_name
         #get the appropriate model
-        #SatCLIP for encoding location
-        if self.location_model_name == 'SatCLIP':
-            print('Using SatCLIP')
-            ckpt = os.path.join(args.pretrained_dir,'satclip/satclip-vit16-l40.ckpt')
-            self.loc_model = get_satclip(
-                    ckpt, device=args.device).double()
-            self.location_feature_dim = 256  
-        #satclip for encoding location and image
-        elif self.location_model_name == 'GeoCLIP':
-            print('Using GeoCLIP')
-            self.loc_model = GeoCLIP().double()
-            self.location_feature_dim = 512
-        #taxabind for encoding location
-        elif self.location_model_name == 'TaxaBind':
-            print('Using TaxaBind')
-            self.loc_model = GeoCLIP().double()
-            ckpt = torch.load(args.pretrained_dir, 'taxabind/patched_location_encoder.pt', map_location=args.device)
-            self.loc_model.load_state_dict(ckpt)
-            self.location_feature_dim = 512
-        #CSP_FMOW
-        elif self.location_model_name == 'CSP':
-            print('Using CSP-FMOW')
-            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'csp/fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar'))
-            self.location_feature_dim = 256
-        #CSP INAT
-        elif self.location_model_name == 'CSP_INat':
-            print('Using CSP-IN75.97lkjhat')
-            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'csp/inat/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar'))
-            self.location_feature_dim = 256
-        #Direct
-        elif self.location_model_name == 'Direct':
-            print('Using Direct Encoding')
-            self.loc_model = DummyLocationEncoder()
-            self.location_feature_dim = 2
-        #Cartesian_3D
-        elif self.location_model_name == 'Cartesian_3D':
-            print('Using Cartesian_3D')
-            self.loc_model = DummyLocationEncoder()
-            self.location_feature_dim = 3
-        #Theory
-        elif self.location_model_name == 'Theory':
-            print('Using Theory')
-            self.loc_model = Theory(frequency_num=32, min_radius=1)
-            self.location_feature_dim = 0
-        #Wrap
-        elif self.location_model_name == 'Wrap':
-            print('Using Wrap')
-            self.loc_model = Wrap()
-            self.location_feature_dim = 4
-        #sphere2vec
-        elif 's2vec' in self.location_model_name:
-            print('Using sphere2vec')
-            self.s2vec_type = self.location_model_name.split('_')[-1]
-            self.loc_model = get_sphere2vec(name=self.s2vec_type)
-            if self.s2vec_type == 'spherem':
-                self.location_feature_dim = 256
-            elif self.s2vec_type == 'spherec':
-                self.location_feature_dim = 288
-            elif self.s2vec_type == 'spheremplus':
-                self.location_feature_dim = 512
-            elif self.s2vec_type == 'spherecplus':
-                self.location_feature_dim = 192
-        #SINR
-        elif self.location_model_name == 'SINR':
-            print('Using SINR')
-            self.loc_model = SINR().double()
-            self.location_feature_dim = 256
-        elif 'RANGE' in self.location_model_name:
+        #RANGE
+        if 'RANGE' in self.location_model_name:
             #load the database
             range_db = np.load(args.range_db, allow_pickle=True)
             self.db_locs_latlon = range_db['locs'].astype(np.float32)
-        
+
             #get satcilp location encoder
             ckpt = os.path.join(args.pretrained_dir,'range/satclip-vit16-l40.ckpt')
             self.loc_model = get_satclip(
@@ -182,7 +115,84 @@ class LocationEncoder(nn.Module):
                 print(f'Using RANGE+ with temperatures {self.args.temp} and {self.args.geo_temp}')
             else:
                 raise ValueError('Unimplemented RANGE model')
-            
+        
+        #SatCLIP for encoding location
+        elif self.location_model_name == 'SatCLIP':
+            print('Using SatCLIP')
+            ckpt = os.path.join(args.pretrained_dir,'satclip/satclip-vit16-l40.ckpt')
+            self.loc_model = get_satclip(
+                    ckpt, device=args.device).double()
+            self.location_feature_dim = 256  
+        
+        #GeoCLIP for encoding location and image
+        elif self.location_model_name == 'GeoCLIP':
+            print('Using GeoCLIP')
+            self.loc_model = GeoCLIP().double()
+            self.location_feature_dim = 512
+        
+        #taxabind for encoding location
+        elif self.location_model_name == 'TaxaBind':
+            print('Using TaxaBind')
+            self.loc_model = GeoCLIP().double()
+            ckpt = torch.load(args.pretrained_dir, 'taxabind/patched_location_encoder.pt', map_location=args.device)
+            self.loc_model.load_state_dict(ckpt)
+            self.location_feature_dim = 512
+        
+        #CSP_FMOW
+        elif self.location_model_name == 'CSP':
+            print('Using CSP-FMOW')
+            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'csp/fmow/model_fmow_gridcell_0.0010_32_0.1000000_1_512_gelu_UNSUPER-contsoftmax_0.000050_1.000_1_0.100_TMP1.0000_1.0000_1.0000.pth.tar'))
+            self.location_feature_dim = 256
+        
+        #CSP INAT
+        elif self.location_model_name == 'CSP_INat':
+            print('Using CSP-IN75.97lkjhat')
+            self.loc_model = get_csp(path=os.path.join(args.pretrained_dir,'csp/inat/model_inat_2018_gridcell_0.0010_32_0.1000000_1_512_leakyrelu_UNSUPER-contsoftmax_0.000500_1.000_1_1.000_TMP20.0000_1.0000_1.0000.pth.tar'))
+            self.location_feature_dim = 256
+        
+        #Direct
+        elif self.location_model_name == 'Direct':
+            print('Using Direct Encoding')
+            self.loc_model = DummyLocationEncoder()
+            self.location_feature_dim = 2
+        
+        #Cartesian_3D
+        elif self.location_model_name == 'Cartesian_3D':
+            print('Using Cartesian_3D')
+            self.loc_model = DummyLocationEncoder()
+            self.location_feature_dim = 3
+        
+        #Theory
+        elif self.location_model_name == 'Theory':
+            print('Using Theory')
+            self.loc_model = Theory(frequency_num=32, min_radius=1)
+            self.location_feature_dim = 0
+        
+        #Wrap
+        elif self.location_model_name == 'Wrap':
+            print('Using Wrap')
+            self.loc_model = Wrap()
+            self.location_feature_dim = 4
+        
+        #sphere2vec
+        elif 's2vec' in self.location_model_name:
+            print('Using sphere2vec')
+            self.s2vec_type = self.location_model_name.split('_')[-1]
+            self.loc_model = get_sphere2vec(name=self.s2vec_type)
+            if self.s2vec_type == 'spherem':
+                self.location_feature_dim = 0
+            elif self.s2vec_type == 'spherec':
+                self.location_feature_dim = 0
+            elif self.s2vec_type == 'spheremplus':
+                self.location_feature_dim = 0
+            elif self.s2vec_type == 'spherecplus':
+                self.location_feature_dim = 0
+        
+        #SINR
+        elif self.location_model_name == 'SINR':
+            print('Using SINR')
+            self.loc_model = SINR().double()
+            self.location_feature_dim = 256
             
         else:
             raise NotImplementedError(f'{self.location_model_name} not implemented')
