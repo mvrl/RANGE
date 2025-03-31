@@ -21,3 +21,4 @@ h5py
 albumentations==1.3.1
 pymap3d==3.1.0
 rshf==0.0.15
+geoclip==1.2.0
