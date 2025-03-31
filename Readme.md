@@ -23,16 +23,63 @@ RANGE (Retrieval Augmented Neural Fields for Multi-Resolution Geo-Embeddings) is
 
 ![](images/framework_cam.jpg)
 
-## 🏋️‍♂️ Performance on Downstream Tasks
-We showed through a large number of downstream tasks that RANGE embeddings outperform several state-of-the-art location embedding methods such as SatCLIP, GeoCLIP, CSP, etc.
-![](images/downstream.png)
-
 ## 🔥 Multi-scale Geoembeddings
 Our method enforces a spatial smoothness constraint. Manipulating this constraint allows generating geo-embeddings at desired frequencies.
 ![](images/beta_interpolation_2.png)
 
+## 🏋️‍♂️ Performance on Downstream Tasks
+We showed through a large number of downstream tasks that RANGE embeddings outperform several state-of-the-art location embedding methods such as SatCLIP, GeoCLIP, CSP, etc.
+![](images/downstream.png)
+
+
+
 ## ⚙️ Usage
 The required model weights and embeddings are made available in huggingface. 
+
+
+🗄️ Download the precomputed RANGE database. Currently, there are two possible choices: `range_db_large.npz` and `range_db_med.npz`:
+```python
+git clone git@github.com:mvrl/RANGE.git
+cd RANGE
+huggingface-cli download mvrl/RANGE-database range_db_large.npz \
+  --repo-type dataset \
+  --local-dir ./pretrained/range \
+  --local-dir-use-symlinks False
+```
+📡 Download base SatCLIP model:
+```python
+huggingface-cli download microsoft/SatCLIP-ViT16-L40 satclip-vit16-l40.ckpt \
+   --repo-type=model \
+   --local-dir=./pretrained/range \
+   --local-dir-use-symlinks=False 
+```
+💻 Compute RANGE embeddings using `load_model.py` 
+```python
+# Create a new python file: touch ./range/test.py
+import os
+import torch
+#local import
+from .load_model import load_model
+
+#define the model
+model_name = 'RANGE+'
+pretrained_dir = './pretrained'
+db_path = os.path.join(pretrained_dir, 'range/range_db_large.npz')
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+beta = 0.5
+rangep_model = load_model(model_name='RANGE+', 
+                          pretrained_dir=pretrained_dir, device='cuda', db_path=db_path, beta=0.5)
+#generate embeddings
+locs = torch.rand(10000, 2).double().to(device)
+embeddings = rangep_model(locs)
+print(embeddings.shape)
+```
+```python
+python -m range.test
+------------------------------
+Output: (10000, 1280)
+```
+The `load_model` module can be used to load other soTA location encoders such as SatCLIP, GeoCLIP, CSP, SINR, etc. Look inside `./range/load_model.py` file for details on usage and which location encoders are currently supported.  
 
 📑 Citation
 
