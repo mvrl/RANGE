@@ -15,3 +15,4 @@ satclip/evaluation/inat/
 *.ckpt
 *.pt
 *.DS_Store
+*.npz
