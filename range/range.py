@@ -20,7 +20,6 @@ from geoclip import LocationEncoder as GeoCLIP #input as lat,long
 from rshf.sinr import SINR
 from rshf.sinr import preprocess_locs as preprocess_sinr
 from .location_models.csp.load_csp import get_csp
-from .location_models.GPS2Vec.get_gps2vec import get_gps2vec
 from .location_models.sphere2vec.sphere2vec import get_sphere2vec
 from .location_models.satclip.positional_encoding.theory import Theory
 from .location_models.satclip.positional_encoding.wrap import Wrap
@@ -40,7 +39,7 @@ def get_args():
     parser.add_argument('--location_model_name', type=str, help='Name of the location model', default='SatCLIP')
     parser.add_argument('--range_db', type=str, default='/projects/bdec/adhakal2/range/data/models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--range_model', type=str, default='', choices=['SatCLIP',''])
-    parser.add_argument('--pretrained_dir', type=str, default='/projects/bdec/adhakal2/hyper_satclip/satclip/location_models')
+    parser.add_argument('--pretrained_dir', type=str, default='./pretrained')
     parser.add_argument('--beta', type=float, default=0.5, help='Beta value for RANGE_COMBINED')  
     parser.add_argument('--task_name', type=str, help='Name of the task', default='biome')
     parser.add_argument('--eval_dir', type=str, help='Path to the evaluation data directory', default='/projects/bdec/adhakal2/hyper_satclip/data/eval_data')
