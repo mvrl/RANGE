@@ -15,9 +15,6 @@ import torch.nn as nn
 #loading different location models
 
 from .location_models.satclip.load import get_satclip
-from geoclip import LocationEncoder as GeoCLIP #input as lat,long
-from rshf.sinr import SINR
-from rshf.sinr import preprocess_locs as preprocess_sinr
 from .location_models.csp.load_csp import get_csp
 from .location_models.sphere2vec.sphere2vec import get_sphere2vec
 from .location_models.satclip.positional_encoding.theory import Theory
@@ -126,6 +123,8 @@ class LocationEncoder(nn.Module):
         
         #GeoCLIP for encoding location and image
         elif self.location_model_name == 'GeoCLIP':
+            #import GeoCLIP
+            from geoclip import LocationEncoder as GeoCLIP #input as lat,long
             print('Using GeoCLIP')
             self.loc_model = GeoCLIP().double()
             self.location_feature_dim = 512
@@ -190,6 +189,9 @@ class LocationEncoder(nn.Module):
         
         #SINR
         elif self.location_model_name == 'SINR':
+            #import SINR
+            from rshf.sinr import SINR
+            from rshf.sinr import preprocess_locs as preprocess_sinr
             print('Using SINR')
             self.loc_model = SINR().double()
             self.location_feature_dim = 256
