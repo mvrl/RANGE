@@ -33,41 +33,43 @@ We showed through a large number of downstream tasks that RANGE embeddings outpe
 
 
 ## ⚙️ Usage
-The required model weights and embeddings are made available in huggingface. 
-
-
-🗃️ Download the precomputed RANGE database. Currently, there are two possible choices: `range_db_large.npz` and `range_db_med.npz`:
+The required model weights and embeddings are made available in huggingface. You can download the precomputed RANGE database using huggingface-cli. Currently, there are two possible choices: `range_db_large.npz` and `range_db_med.npz`.
 ```python
 git clone git@github.com:mvrl/RANGE.git
 cd RANGE
+#this is optional as we can directly do this inside our python script
 huggingface-cli download mvrl/RANGE-database range_db_large.npz \
   --repo-type dataset \
   --local-dir ./pretrained/range \
   --local-dir-use-symlinks False
 ```
-📡 Download base SatCLIP model:
-```python
-huggingface-cli download microsoft/SatCLIP-ViT16-L40 satclip-vit16-l40.ckpt \
-   --repo-type=model \
-   --local-dir=./pretrained/range \
-   --local-dir-use-symlinks=False 
-```
+
 💻 Compute RANGE embeddings using `load_model.py` 
 ```python
 # Create a new python file: touch ./range/test.py
 import os
 import torch
-#local import
+#import load_model locally
 from .load_model import load_model
 
-#define the model
+#get path to the pretrained SatCLIP model
+pretrained_path =  hf_hub_download('microsoft/SatCLIP-ViT16-L40', 'satclip-vit16-l40.ckpt', repo_type='model', local_dir='./pretrained/range', local_dir_use_symlinks=False)
+
+#get path to the RANGE database
+db_path = hf_hub_download('mvrl/RANGE-database', 'range_db_large.npz', repo_type='dataset' local_dir='./pretrained/range', local_dir_use_symlinks=False)
+
+#define the model you want to load
 model_name = 'RANGE+'
-pretrained_dir = './pretrained'
-db_path = os.path.join(pretrained_dir, 'range/range_db_large.npz')
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+#set the beta parameter
 beta = 0.5
-rangep_model = load_model(model_name=model_name, 
-                          pretrained_dir=pretrained_dir, device=device, db_path=db_path, beta=beta)
+
+#initialize model using load_model
+rangep_model = load_model(model_name=model_name, pretrained_path=pretrained_path,
+                               device=device, db_path=db_path, beta=beta)
+
+#create a random Nx2 tensor    
+a = torch.rand(10000,2).double().to(device)
+
 #generate embeddings
 # For optimal performance, use a veryyy large batch size.
 # We consistently used a batch size of 10000 or higher when computing embeddings.
@@ -80,7 +82,7 @@ python -m range.test
 ------------------------------
 Output: (10000, 1280)
 ```
-The `load_model` module can be used to load other soTA location encoders such as SatCLIP, GeoCLIP, CSP, SINR, etc. Look inside `./range/load_model.py` file for details on usage and which location encoders are currently supported.  
+The `load_model` module can be used to load other soTA location encoders such as `SatCLIP, GeoCLIP, CSP, SINR`, etc. Look inside `./range/load_model.py` file for details on usage and which location encoders are currently supported.  
 
 📑 Citation
 
