@@ -4,7 +4,6 @@ torchvision
 torchaudio
 lightning==2.1.3
 wandb==0.16.3
-tensorboard==2.11.0
 pandas==1.5.2
 seaborn==0.12.2
 gdown==4.4.0
@@ -18,11 +17,7 @@ scikit-image==0.19.3
 matplotlib
 numpy
 torchgeo
-#version 3
-webdataset==0.2.33
-braceexpand==0.1.7
-#version 5
 h5py
 albumentations==1.3.1
 pymap3d==3.1.0
-rshf
+rshf==0.0.15
