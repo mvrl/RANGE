@@ -55,10 +55,12 @@ from .load_model import load_model
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 #get path to the pretrained SatCLIP model
-pretrained_path =  hf_hub_download('microsoft/SatCLIP-ViT16-L40', 'satclip-vit16-l40.ckpt', repo_type='model', local_dir='./pretrained/range', local_dir_use_symlinks=False)
+pretrained_path =  hf_hub_download('microsoft/SatCLIP-ViT16-L40', 'satclip-vit16-l40.ckpt',
+                                        repo_type='model', local_dir='./pretrained/range', local_dir_use_symlinks=False)
 
 #get path to the RANGE database
-db_path = hf_hub_download('mvrl/RANGE-database', 'range_db_large.npz', repo_type='dataset', local_dir='./pretrained/range', local_dir_use_symlinks=False)
+db_path = hf_hub_download('mvrl/RANGE-database', 'range_db_large.npz',
+                             repo_type='dataset', local_dir='./pretrained/range', local_dir_use_symlinks=False)
 
 #define the model you want to load
 model_name = 'RANGE+'
