@@ -66,8 +66,8 @@ pretrained_dir = './pretrained'
 db_path = os.path.join(pretrained_dir, 'range/range_db_large.npz')
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 beta = 0.5
-rangep_model = load_model(model_name='RANGE+', 
-                          pretrained_dir=pretrained_dir, device='cuda', db_path=db_path, beta=0.5)
+rangep_model = load_model(model_name=model_name, 
+                          pretrained_dir=pretrained_dir, device=device, db_path=db_path, beta=beta)
 #generate embeddings
 # For optimal performance, use a veryyy large batch size.
 # We consistently used a batch size of 10000 or higher when computing embeddings.
