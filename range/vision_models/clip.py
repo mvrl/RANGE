@@ -1,12 +1,7 @@
 import numpy as np
-import torch
 import torch.nn as nn
-from transformers import CLIPImageProcessor,CLIPVisionModelWithProjection, CLIPVisionConfig
-from torchvision.transforms import RandAugment
+from transformers import CLIPVisionModelWithProjection
 import pytorch_lightning as pl
-import imageio
-import sys
-from argparse import Namespace
 import code
 
 class Clip(pl.LightningModule):
