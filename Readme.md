@@ -19,7 +19,7 @@
 <br>
 <br>
 This repository is the official implementation of RANGE. RANGE (Retrieval Augmented Neural Fields for Multi-Resolution Geo-Embeddings) is a retrieval-augmented framework for embedding geographic coordinates. RANGE directly estimates the visual features for a given location, allowing the representations to capture high-resolution information. 
-
+<br>
 <br>
 
 ![](images/framework_cam.jpg)
@@ -50,7 +50,7 @@ huggingface-cli download mvrl/RANGE-database range_db_large.npz \
   --local-dir-use-symlinks False
 ```
 
-💻 Compute RANGE embeddings using `load_model.py` 
+💻 Compute RANGE embeddings using `load_model` 
 ```python
 # Create a new python file: touch ./range/test.py
 import os
