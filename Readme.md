@@ -50,7 +50,7 @@ huggingface-cli download mvrl/RANGE-database range_db_large.npz \
   --local-dir-use-symlinks False
 ```
 
-💻 Compute RANGE embeddings using `load_model.py` 
+💻 Compute RANGE embeddings using `load_model` 
 ```python
 # Create a new python file: touch ./range/test.py
 import os
