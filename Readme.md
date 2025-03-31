@@ -36,7 +36,7 @@ We showed through a large number of downstream tasks that RANGE embeddings outpe
 The required model weights and embeddings are made available in huggingface. 
 
 
-🗄️ Download the precomputed RANGE database. Currently, there are two possible choices: `range_db_large.npz` and `range_db_med.npz`:
+🗃️ Download the precomputed RANGE database. Currently, there are two possible choices: `range_db_large.npz` and `range_db_med.npz`:
 ```python
 git clone git@github.com:mvrl/RANGE.git
 cd RANGE
