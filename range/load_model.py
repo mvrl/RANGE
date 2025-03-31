@@ -10,9 +10,10 @@
 # Wrap
 import torch
 from argparse import Namespace
+from huggingface_hub import hf_hub_download
 from .range import LocationEncoder
 
-def load_model(model_name='RANGE+', pretrained_dir='./pretrained', device='cuda', **kwargs):
+def load_model(model_name='RANGE+', pretrained_path=None, device='cuda', **kwargs):
     """
     Load the specified location encoder model.
 
@@ -27,6 +28,8 @@ def load_model(model_name='RANGE+', pretrained_dir='./pretrained', device='cuda'
     Returns:
         LocationEncoder: The loaded location encoder model.
     """
+    if pretrained_path is None:
+        raise ValueError("Please provide the pretrained model path.")
     if 'RANGE' in model_name:
         assert 'db_path' in kwargs, "db_path is required for RANGE model."
         db_path = kwargs.get('db_path')
@@ -39,7 +42,7 @@ def load_model(model_name='RANGE+', pretrained_dir='./pretrained', device='cuda'
         db_path = None
         beta = None
     #create namespace object
-    args = Namespace(location_model_name=model_name, pretrained_dir=pretrained_dir,device=device,
+    args = Namespace(location_model_name=model_name, pretrained_path=pretrained_path,device=device,
                       range_db=db_path, beta=beta)
     #load the model
     model = LocationEncoder(args)
@@ -49,11 +52,14 @@ def load_model(model_name='RANGE+', pretrained_dir='./pretrained', device='cuda'
 
 if __name__ == '__main__':
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    pretrained_dir = './pretrained'
+    pretrained_path =  hf_hub_download('microsoft/SatCLIP-ViT16-L40', 'satclip-vit16-l40.ckpt', 
+                                       repo_type='model', local_dir='./pretrained/range', local_dir_use_symlinks=False)
+    db_path = hf_hub_download('mvrl/RANGE-database', 'range_db_large.npz', repo_type='dataset',
+                              local_dir='./pretrained/range', local_dir_use_symlinks=False)
     model_name = 'RANGE+'
     beta = 0.5
-    db_path = '/projects/bdec/adhakal2/range/data/models/ranf/ranf_satmae_db.npz'
-    rangep_model = load_model(model_name=model_name, model_path=pretrained_dir,
+
+    rangep_model = load_model(model_name=model_name, pretrained_path=pretrained_path,
                                device=device, db_path=db_path, beta=beta)
     a = torch.rand(10000,2).double().to(device)
     import code; code.interact(local=dict(globals(), **locals()))
