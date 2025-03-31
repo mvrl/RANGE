@@ -1,4 +1,4 @@
-# RANGE: Retrieval Augmented Neural Fields for Multi-Resolution Geo-Embeddings (CVPR 2025) 🌎🌏🌍
+# RANGE: Retrieval Augmented Neural Fields for Multi-Resolution Geo-Embeddings (CVPR 2025) 🌎🌍🌏
 <div align="center">
 
 [![Static Badge](https://img.shields.io/badge/2502.19781-red?label=arxiv)](https://arxiv.org/abs/2502.19781)
@@ -36,7 +36,7 @@ We showed through a large number of downstream tasks that RANGE embeddings outpe
 The required model weights and embeddings are made available in huggingface. 
 
 
-🗄️ Download the precomputed RANGE database. Currently, there are two possible choices: `range_db_large.npz` and `range_db_med.npz`:
+🗃️ Download the precomputed RANGE database. Currently, there are two possible choices: `range_db_large.npz` and `range_db_med.npz`:
 ```python
 git clone git@github.com:mvrl/RANGE.git
 cd RANGE
@@ -66,10 +66,11 @@ pretrained_dir = './pretrained'
 db_path = os.path.join(pretrained_dir, 'range/range_db_large.npz')
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 beta = 0.5
-rangep_model = load_model(model_name='RANGE+', 
-                          pretrained_dir=pretrained_dir, device='cuda', db_path=db_path, beta=0.5)
+rangep_model = load_model(model_name=model_name, 
+                          pretrained_dir=pretrained_dir, device=device, db_path=db_path, beta=beta)
 #generate embeddings
-#for optimal performance, use a veryyy large batch size. We consistently used a batch size of 10000 or higher when computing embeddings.
+# For optimal performance, use a veryyy large batch size.
+# We consistently used a batch size of 10000 or higher when computing embeddings.
 locs = torch.rand(10000, 2).double().to(device)
 embeddings = rangep_model(locs)
 print(embeddings.shape)
