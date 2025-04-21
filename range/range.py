@@ -131,10 +131,9 @@ class LocationEncoder(nn.Module):
         
         #taxabind for encoding location
         elif self.location_model_name == 'TaxaBind':
-            print('Using TaxaBind')
-            self.loc_model = GeoCLIP().double()
-            ckpt = torch.load(args.pretrained_dir, 'taxabind/patched_location_encoder.pt', map_location=args.device)
-            self.loc_model.load_state_dict(ckpt)
+            #import TaxaBind
+            from rshf.geoclip import GeoCLIP as TaxaBind
+            self.loc_model = TaxaBind.from_pretrained('MVRL/ecogeo').double()
             self.location_feature_dim = 512
         
         #CSP_FMOW
@@ -193,6 +192,7 @@ class LocationEncoder(nn.Module):
             from rshf.sinr import SINR
             from rshf.sinr import preprocess_locs as preprocess_sinr
             print('Using SINR')
+            self.preprocess_sinr = preprocess_sinr
             self.loc_model = SINR().double()
             self.location_feature_dim = 256
             
@@ -252,7 +252,7 @@ class LocationEncoder(nn.Module):
             loc_embeddings = self.loc_model(coords, return_feats=True)
         #################  SINR #####################
         elif self.location_model_name == 'SINR':
-            coords = preprocess_sinr(coords)
+            coords = self.preprocess_sinr(coords)
             loc_embeddings = self.loc_model(coords)
         ################ taxaBind #####################
         elif self.location_model_name == 'TaxaBind':
