@@ -56,6 +56,8 @@ huggingface-cli download mvrl/RANGE-database range_db_large.npz \
 import os
 import torch
 from huggingface_hub import hf_hub_download
+from sklearn.preprocessing import MinMaxScaler
+
 #import load_model locally
 from .load_model import load_model
 
@@ -85,7 +87,9 @@ a = torch.rand(10000,2).double().to(device)
 # We consistently used a batch size of 10000 or higher when computing embeddings.
 locs = torch.rand(10000, 2).double().to(device)
 embeddings = rangep_model(locs)
-print(embeddings.shape)
+scaler = MinMaxScaler()
+scaled_embeddings = scaler.fit_transform(embeddings)
+print(scaled_embeddings.shape)
 ```
 ```python
 python -m range.test
