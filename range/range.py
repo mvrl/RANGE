@@ -193,7 +193,7 @@ class LocationEncoder(nn.Module):
             from rshf.sinr import preprocess_locs as preprocess_sinr
             print('Using SINR')
             self.preprocess_sinr = preprocess_sinr
-            self.loc_model = SINR().double()
+            self.loc_model = SINR.from_pretrained('MVRL/sinr-location-encoder-1000-cls').double()
             self.location_feature_dim = 256
             
         else:
