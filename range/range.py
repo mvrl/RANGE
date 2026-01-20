@@ -219,7 +219,8 @@ class LocationEncoder(nn.Module):
             #concatenate rich image features with low res location features
             if self.location_model_name=='RANGE':
                 # RANGE embeddings
-                loc_embeddings = np.concatenate((high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
+                loc_embeddings = torch.tensor(np.concatenate((high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1))
+
             elif self.location_model_name=='RANGE+':
                 # RANGE+ embeddings
                 query_locations_latlon = coords.cpu().numpy()
@@ -237,7 +238,7 @@ class LocationEncoder(nn.Module):
                 #compute the average between the two high res embeddings
                 averaged_high_res_embeddings = (1-self.args.beta)*angular_high_res_embeddings + self.args.beta*high_res_embeddings
                 #concatenate this with the low res values
-                loc_embeddings = np.concatenate((averaged_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1)
+                loc_embeddings = torch.tensor(np.concatenate((averaged_high_res_embeddings.cpu(), curr_loc_embeddings.cpu()), axis=1))
             else:
                 raise ValueError('Unimplemented RANGE model')
         ###############  SatCLIP #####################
