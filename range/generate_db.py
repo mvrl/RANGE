@@ -19,12 +19,12 @@ from .vision_models.satmae import SatMAE_Raw
 
 def get_args():
     parser = argparse.ArgumentParser(description='Create a database of embeddings')
-    parser.add_argument('--out_path', type=str, help='Path to the save output', default='/home/a.dhakal/active/user_a.dhakal/hyper_satclip/data/data/models/ranf/ranf_satmae_db.npz')
+    parser.add_argument('--out_path', type=str, help='Path to the save output', default='../models/ranf/ranf_satmae_db.npz')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use')
     parser.add_argument('--to_do', type=str, default='make_db', choices=['make_db', 'eval'], help='What to do')
     #dataloader args
-    parser.add_argument('--data_dir', type=str, default='/home/a.dhakal/active/project_crossviewmap/SatCLIP', help='Path to the data')
-    parser.add_argument('--rgb_path', type=str, default='/home/a.dhakal/active/project_crossviewmap/SatCLIP/rgb_sentinel')
+    parser.add_argument('--data_dir', type=str, default='..data/SatCLIP', help='Path to the data')
+    parser.add_argument('--rgb_path', type=str, default='../data/SatCLIP/rgb_sentinel')
     parser.add_argument('--batch_size', type=int, default=200, help='Batch size')
     parser.add_argument('--num_workers', type=int, default=8, help='Number of workers')
     parser.add_argument('--inp_chan', type=int, default=12, help='Number of input channels')
