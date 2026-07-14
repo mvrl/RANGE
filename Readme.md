@@ -98,6 +98,9 @@ Output: (10000, 1280)
 ```
 The `load_model` module can be used to load other soTA location encoders such as `SatCLIP, GeoCLIP, CSP, SINR`, etc. Look inside `./range/load_model.py` file for details on usage and which location encoders are currently supported.  
 
+## 🧪 Fine-tuning Note
+RANGE is a post-training optimization on top of a backbone encoder. To adapt RANGE to a region-specific fine-tuned setup, fine-tune the backbone first (e.g., SatCLIP image encoder), then regenerate the RANGE database keys using embeddings from that fine-tuned encoder (see `./range/generate_db.py`).
+
 📑 Citation
 
 ```bibtex
