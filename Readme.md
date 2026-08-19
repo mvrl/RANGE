@@ -4,6 +4,7 @@
 [![Static Badge](https://img.shields.io/badge/2502.19781-red?label=arxiv)](https://arxiv.org/abs/2502.19781)
 [![Hugging Face Models](https://img.shields.io/badge/%F0%9F%A4%97%20HuggingFace-Models-yellow
 )](https://huggingface.co/collections/MVRL/range-67e99fa1dfc6c86a3b872c09)
+[![PyPI](https://img.shields.io/pypi/v/rangegeo?label=pypi%20%7C%20rangegeo&color=blue)](https://pypi.org/project/rangegeo/)
 
 </center>
 
@@ -38,7 +39,25 @@ We showed through a large number of downstream tasks that RANGE embeddings outpe
 
 
 
-## ⚙️ Usage
+## 🚀 Quick Start (pip)
+Install the inference-only package ([rangegeo on PyPI](https://pypi.org/project/rangegeo/)):
+```bash
+pip install rangegeo
+```
+
+Get embeddings for any location in three lines — the SatCLIP backbone and the RANGE retrieval database are downloaded automatically from HuggingFace on first use (cached afterwards):
+```python
+from rangegeo import RANGE
+
+model = RANGE("RANGE+", db="large", beta=0.5)   # or "RANGE"; db: "large" | "med"
+embeddings = model.encode([[-90.19, 38.63], [85.32, 27.72]])  # (lon, lat) in degrees
+print(embeddings.shape)  # (2, 1280)
+```
+`model.encode` accepts any `(N, 2)` array-like of (longitude, latitude) degrees and returns a numpy array; for GPU it batches internally (default batch size 10000). To use a fine-tuned backbone or a regenerated database, pass `pretrained_path=` and/or `db_path=`. The model is a regular `torch.nn.Module`, so `model(coords_tensor)` also works inside a torch pipeline.
+
+## ⚙️ Usage (research code)
+The `rangegeo` package above only contains what is needed for inference. The full research code (training, evaluation, baselines such as SatCLIP/GeoCLIP/CSP/SINR) lives in the `range/` directory of this repo and is used by cloning the repo as described below.
+
 The required model weights and embeddings are made available in huggingface. You can download the precomputed RANGE database using huggingface-cli. Currently, there are two possible choices: `range_db_large.npz` and `range_db_med.npz`.
 ```python
 git clone git@github.com:mvrl/RANGE.git
